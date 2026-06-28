@@ -1,0 +1,8 @@
+/adrm
+*.test
+*.out
+coverage.txt
+
+.DS_Store
+.idea/
+.vscode/
