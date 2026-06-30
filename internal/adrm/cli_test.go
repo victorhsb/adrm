@@ -154,6 +154,86 @@ func TestAppendAndDeprecateMutateADR(t *testing.T) {
 	}
 }
 
+func TestAcceptMutatesADR(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+	if code, env := runForTest(t, "--adr-dir", dir, "accept", "--id", "ADR-0001", "--reason", "Approved by the team.", "--dry-run"); code != exitOK || env["status"] != "planned" {
+		t.Fatalf("accept dry-run code=%d env=%#v", code, env)
+	}
+	if code, _ := runForTest(t, "--adr-dir", dir, "accept", "--id", "ADR-0001", "--reason", "Approved by the team."); code != exitOK {
+		t.Fatalf("accept code = %d", code)
+	}
+	code, env := runForTest(t, "--adr-dir", dir, "show", "--id", "ADR-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	adr := env["data"].(map[string]any)["adr"].(map[string]any)
+	if adr["status"] != "accepted" {
+		t.Fatalf("status = %v", adr["status"])
+	}
+	content := adr["content"].(string)
+	if !strings.Contains(content, "## History: Accepted") || !strings.Contains(content, "Approved by the team.") {
+		t.Fatalf("content missing accepted history:\n%s", content)
+	}
+}
+
+func TestRejectMutatesADR(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+	if code, env := runForTest(t, "--adr-dir", dir, "reject", "--id", "ADR-0001", "--reason", "Chose a different approach.", "--dry-run"); code != exitOK || env["status"] != "planned" {
+		t.Fatalf("reject dry-run code=%d env=%#v", code, env)
+	}
+	if code, _ := runForTest(t, "--adr-dir", dir, "reject", "--id", "ADR-0001", "--reason", "Chose a different approach."); code != exitOK {
+		t.Fatalf("reject code = %d", code)
+	}
+	code, env := runForTest(t, "--adr-dir", dir, "show", "--id", "ADR-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	adr := env["data"].(map[string]any)["adr"].(map[string]any)
+	if adr["status"] != "rejected" {
+		t.Fatalf("status = %v", adr["status"])
+	}
+	content := adr["content"].(string)
+	if !strings.Contains(content, "## History: Rejected") || !strings.Contains(content, "Chose a different approach.") {
+		t.Fatalf("content missing rejected history:\n%s", content)
+	}
+}
+
+func TestAcceptMissingID(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+	code, env := runForTest(t, "--adr-dir", dir, "accept")
+	if code != exitUsage {
+		t.Fatalf("code = %d env=%#v", code, env)
+	}
+	errData := env["error"].(map[string]any)
+	if errData["code"] != "missing_id" {
+		t.Fatalf("error = %#v", errData)
+	}
+}
+
+func TestRejectMissingID(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+	code, env := runForTest(t, "--adr-dir", dir, "reject")
+	if code != exitUsage {
+		t.Fatalf("code = %d env=%#v", code, env)
+	}
+	errData := env["error"].(map[string]any)
+	if errData["code"] != "missing_id" {
+		t.Fatalf("error = %#v", errData)
+	}
+}
+
 func TestSupersedeRequiresReplacementADR(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
 	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Old decision"); code != exitOK {

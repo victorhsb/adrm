@@ -66,6 +66,26 @@ adrm new --title "Use SQLite for local query index" --status proposed --tags "st
 adrm show --id ADR-0001
 ```
 
+## Accepting a decision
+
+Use `accept` to record that a proposed ADR has been approved.
+
+```sh
+adrm show --id ADR-0001
+adrm accept --id ADR-0001 --reason "Approved by the team." --dry-run
+adrm accept --id ADR-0001 --reason "Approved by the team."
+```
+
+## Rejecting a decision
+
+Use `reject` to record that an ADR was turned down, without removing it.
+
+```sh
+adrm show --id ADR-0001
+adrm reject --id ADR-0001 --reason "Chose a different approach." --dry-run
+adrm reject --id ADR-0001 --reason "Chose a different approach."
+```
+
 ## Superseding a decision
 
 Create or identify the replacement ADR first. `supersede` requires the replacement

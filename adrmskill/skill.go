@@ -100,6 +100,20 @@ adrm new --title "Use SQLite for local query index" --status proposed --dry-run
 adrm new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."
 `+"```"+`
 
+Accept an ADR:
+
+`+"```sh"+`
+adrm accept --id ADR-0001 --reason "Approved by the team." --dry-run
+adrm accept --id ADR-0001 --reason "Approved by the team."
+`+"```"+`
+
+Reject an ADR:
+
+`+"```sh"+`
+adrm reject --id ADR-0001 --reason "Chose a different approach." --dry-run
+adrm reject --id ADR-0001 --reason "Chose a different approach."
+`+"```"+`
+
 Supersede an ADR:
 
 `+"```sh"+`

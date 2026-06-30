@@ -63,6 +63,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runShow(stdout, stderr, opts, store, commandArgs)
 	case "search":
 		return runSearch(stdout, stderr, opts, store, commandArgs)
+	case "accept":
+		return runAccept(stdout, stderr, opts, store, commandArgs)
+	case "reject":
+		return runReject(stdout, stderr, opts, store, commandArgs)
 	case "supersede":
 		return runSupersede(stdout, stderr, opts, store, commandArgs)
 	case "deprecate":
@@ -301,6 +305,52 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, store Store, args [
 		},
 		NextActions: []NextAction{{Command: "adrm show --id ADR-0001", Description: "Inspect a selected result id.", Safety: "read-only"}},
 	}, opts.Format)
+	return exitOK
+}
+
+func runAccept(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+	return runLifecycle(stdout, stderr, opts, store, args, "accept", "accepted", "Accepted")
+}
+
+func runReject(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+	return runLifecycle(stdout, stderr, opts, store, args, "reject", "rejected", "Rejected")
+}
+
+func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string, command, status, historyTitle string) int {
+	fs := newCommandFlagSet(stderr, command)
+	id := fs.String("id", "", fmt.Sprintf("ADR id to %s", command))
+	reason := fs.String("reason", "", "reason")
+	dryRun := fs.Bool("dry-run", false, "preview changes")
+	if err := fs.Parse(args); err != nil {
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
+		return exitUsage
+	}
+	if strings.TrimSpace(*id) == "" {
+		writeEnvelope(stdout, errorEnvelope(command, "missing_id", "usage", "--id is required", "Use an id from `adrm list`, then retry with --dry-run."), opts.Format)
+		return exitUsage
+	}
+	adr, err := store.Read(*id)
+	if err != nil {
+		return handleReadError(stdout, opts, command, err)
+	}
+	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=%s and append history.", status)}}}
+	applyCommand := fmt.Sprintf("adrm %s --id %s", command, adr.ID)
+	if strings.TrimSpace(*reason) != "" {
+		applyCommand += " --reason " + quoteForNextAction(*reason)
+	}
+	if *dryRun {
+		writeEnvelope(stdout, dryRunEnvelope(command, plan, adr.ID, applyCommand), opts.Format)
+		return exitOK
+	}
+	adr.Status = status
+	adr.Content = setStatusSection(adr.Content, adr.Status)
+	adr.Content = appendHistory(adr.Content, historyTitle, defaultText(*reason, "No reason provided."))
+	if err := store.Save(adr); err != nil {
+		writeEnvelope(stdout, errorEnvelope(command, "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
+		return exitIO
+	}
+	plan.ChangesMade = true
+	writeEnvelope(stdout, mutationEnvelope(command, plan, adr), opts.Format)
 	return exitOK
 }
 

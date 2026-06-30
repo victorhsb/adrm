@@ -137,6 +137,52 @@ adrm search --tag storage --query local
 
 Safety: read-only.
 
+## `accept`
+
+Marks an ADR as accepted.
+
+```sh
+adrm accept --id ADR-0001 --reason "Approved by the team." --dry-run
+adrm accept --id ADR-0001 --reason "Approved by the team."
+```
+
+Flags:
+
+- `--id`: required. ADR id to accept.
+- `--reason`: optional. Reason recorded in the history section.
+- `--dry-run`: preview without writing.
+
+Effects:
+
+- Sets `status: accepted`.
+- Updates the Status section in the body.
+- Appends a `History: Accepted` section.
+
+Safety: mutating. Supports `--dry-run`.
+
+## `reject`
+
+Marks an ADR as rejected.
+
+```sh
+adrm reject --id ADR-0001 --reason "Chose a different approach." --dry-run
+adrm reject --id ADR-0001 --reason "Chose a different approach."
+```
+
+Flags:
+
+- `--id`: required. ADR id to reject.
+- `--reason`: optional. Reason recorded in the history section.
+- `--dry-run`: preview without writing.
+
+Effects:
+
+- Sets `status: rejected`.
+- Updates the Status section in the body.
+- Appends a `History: Rejected` section.
+
+Safety: mutating. Supports `--dry-run`.
+
 ## `supersede`
 
 Marks one ADR as superseded by another existing ADR.
