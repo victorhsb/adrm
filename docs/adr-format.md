@@ -36,8 +36,8 @@ Fields:
 - `status`: one of `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`.
 - `date`: creation date in `YYYY-MM-DD`.
 - `tags`: comma-separated tags.
-- `supersedes`: comma-separated ids this ADR replaces.
-- `superseded_by`: id of the ADR that replaces this one.
+- `supersedes`: comma-separated ids this ADR replaces. The `supersede` command populates this field on the replacement ADR.
+- `superseded_by`: id of the ADR that replaces this one. The `supersede` command populates this field on the superseded ADR.
 - `deprecated_by`: marker for deprecation source. The current CLI writes `manual`.
 
 ## Body

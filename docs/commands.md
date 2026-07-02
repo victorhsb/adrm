@@ -194,10 +194,11 @@ adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the curre
 
 Effects:
 
-- Sets `status: superseded`.
+- Sets `status: superseded` on the `--id` ADR.
 - Sets `superseded_by` to the replacement ADR id.
-- Updates the Status section in the body.
-- Appends a `History: Superseded` section.
+- Adds the superseded ADR id to the replacement ADR's `supersedes` list.
+- Updates the Status section in the body of the superseded ADR.
+- Appends a `History: Superseded` section to the superseded ADR.
 
 Safety: mutating. Supports `--dry-run`.
 

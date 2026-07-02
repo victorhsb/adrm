@@ -205,7 +205,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []st
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
-				{Command: strings.ReplaceAll(strings.Join(append([]string{"adrm new", "--title", quoteForNextAction(*title), "--status", statusValue}, dryRunFreeArgs(*tags, *context, *decision, *consequences)...), " "), " --dry-run", ""), Description: "Apply this ADR creation plan.", Safety: "write"},
+				{Command: strings.Join(append([]string{"adrm new", "--title", quoteForNextAction(*title), "--status", statusValue}, dryRunFreeArgs(*tags, *context, *decision, *consequences)...), " "), Description: "Apply this ADR creation plan.", Safety: "write"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -381,11 +381,18 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 		writeEnvelope(stdout, errorEnvelope("supersede", "self_supersede", "state", "an ADR cannot supersede itself", "Choose a different --by ADR id."), opts.Format)
 		return exitState
 	}
-	if _, err := store.Read(byID); err != nil {
-		writeEnvelope(stdout, errorEnvelope("supersede", "superseding_adr_not_found", "state", fmt.Sprintf("superseding ADR %s was not found", byID), "Create or select the replacement ADR first, then retry with --dry-run."), opts.Format)
-		return exitNotFound
+	byADR, err := store.Read(byID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeEnvelope(stdout, errorEnvelope("supersede", "superseding_adr_not_found", "state", fmt.Sprintf("superseding ADR %s was not found", byID), "Create or select the replacement ADR first, then retry with --dry-run."), opts.Format)
+			return exitNotFound
+		}
+		return handleReadError(stdout, opts, "supersede", err)
 	}
-	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=superseded and superseded_by=%s.", byID)}}}
+	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{
+		{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=superseded and superseded_by=%s.", byID)},
+		{Action: "update_file", Path: byADR.Path, Description: fmt.Sprintf("Add %s to supersedes list.", adr.ID)},
+	}}
 	applyCommand := fmt.Sprintf("adrm supersede --id %s --by %s", adr.ID, byID)
 	if strings.TrimSpace(*reason) != "" {
 		applyCommand += " --reason " + quoteForNextAction(*reason)
@@ -398,7 +405,18 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 	adr.SupersededBy = byID
 	adr.Content = setStatusSection(adr.Content, adr.Status)
 	adr.Content = appendHistory(adr.Content, "Superseded", fmt.Sprintf("Superseded by %s. %s", byID, *reason))
+
+	originalBySupersedes := byADR.Supersedes
+	byADR.Supersedes = cleanList(append(byADR.Supersedes, adr.ID))
+
+	if err := store.Save(byADR); err != nil {
+		writeEnvelope(stdout, errorEnvelope("supersede", "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
+		return exitIO
+	}
 	if err := store.Save(adr); err != nil {
+		// Best-effort rollback: try to restore the replacement ADR's supersedes list.
+		byADR.Supersedes = originalBySupersedes
+		_ = store.Save(byADR)
 		writeEnvelope(stdout, errorEnvelope("supersede", "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
 		return exitIO
 	}

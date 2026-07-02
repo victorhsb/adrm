@@ -249,6 +249,72 @@ func TestSupersedeRequiresReplacementADR(t *testing.T) {
 	}
 }
 
+func TestSupersedeUpdatesBothADRs(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Old decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "New decision"); code != exitOK {
+		t.Fatalf("new code = %d", code)
+	}
+
+	// Dry-run previews two operations and writes nothing.
+	code, env := runForTest(t, "--adr-dir", dir, "supersede", "--id", "ADR-0001", "--by", "ADR-0002", "--reason", "Replaced by current design.", "--dry-run")
+	if code != exitOK || env["status"] != "planned" {
+		t.Fatalf("dry-run code=%d env=%#v", code, env)
+	}
+	plan := env["data"].(map[string]any)["plan"].(map[string]any)
+	ops := plan["operations"].([]any)
+	if len(ops) != 2 {
+		t.Fatalf("expected 2 operations, got %d: %#v", len(ops), ops)
+	}
+
+	if code, _ := runForTest(t, "--adr-dir", dir, "supersede", "--id", "ADR-0001", "--by", "ADR-0002", "--reason", "Replaced by current design."); code != exitOK {
+		t.Fatalf("supersede code = %d", code)
+	}
+
+	code, env = runForTest(t, "--adr-dir", dir, "show", "--id", "ADR-0001")
+	if code != exitOK {
+		t.Fatalf("show old code = %d", code)
+	}
+	old := env["data"].(map[string]any)["adr"].(map[string]any)
+	if old["status"] != "superseded" || old["superseded_by"] != "ADR-0002" {
+		t.Fatalf("old adr = %#v", old)
+	}
+	oldContent := old["content"].(string)
+	if !strings.Contains(oldContent, "## History: Superseded") || !strings.Contains(oldContent, "Replaced by current design.") {
+		t.Fatalf("old adr missing history:\n%s", oldContent)
+	}
+
+	code, env = runForTest(t, "--adr-dir", dir, "show", "--id", "ADR-0002")
+	if code != exitOK {
+		t.Fatalf("show new code = %d", code)
+	}
+	replacement := env["data"].(map[string]any)["adr"].(map[string]any)
+	var sawOldID bool
+	for _, raw := range replacement["supersedes"].([]any) {
+		if raw == "ADR-0001" {
+			sawOldID = true
+		}
+	}
+	if !sawOldID {
+		t.Fatalf("replacement adr missing ADR-0001 in supersedes: %#v", replacement)
+	}
+
+	// Second supersede is idempotent.
+	if code, _ := runForTest(t, "--adr-dir", dir, "supersede", "--id", "ADR-0001", "--by", "ADR-0002"); code != exitOK {
+		t.Fatalf("repeat supersede code = %d", code)
+	}
+	code, env = runForTest(t, "--adr-dir", dir, "show", "--id", "ADR-0002")
+	if code != exitOK {
+		t.Fatalf("show new after repeat code = %d", code)
+	}
+	replacement = env["data"].(map[string]any)["adr"].(map[string]any)
+	if len(replacement["supersedes"].([]any)) != 1 {
+		t.Fatalf("supersedes list not deduped: %#v", replacement["supersedes"])
+	}
+}
+
 func TestSkillReturnsManagedContent(t *testing.T) {
 	code, env := runForTest(t, "skill")
 	if code != exitOK {

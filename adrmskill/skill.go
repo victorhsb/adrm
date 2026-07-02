@@ -9,7 +9,7 @@ import (
 
 const (
 	Name              = "adrm"
-	Version           = "1"
+	Version           = "2"
 	FileName          = "SKILL.md"
 	DefaultInstallDir = ".agents/skills/adrm"
 )
@@ -144,6 +144,35 @@ adrm skill install
 adrm skill update --dry-run
 adrm skill update
 `+"```"+`
+
+## When to create or change an ADR
+
+`+"`adrm`"+` stores *Architecture Decision Records*, not plans, tickets, or changelogs. Use an ADR when these four tests are all true:
+
+1. **It is a commitment, not an intention.** Past-tense: "We decided X". Not "We will add X".
+2. **It is architectural.** It shapes the system's structure, contract, data model, or cross-cutting policy, and reversal would ripple.
+3. **It is non-obvious.** Reasonable people might choose differently, so the reasoning is worth preserving.
+4. **It is narrow.** One ADR per decision. Bundles hide the real tradeoff.
+
+### Technical vs product decisions
+
+A pure product decision (market, prioritization, pricing) is **not** architecture and does not belong in an ADR. It belongs in an ADR only when it **forces an architectural commitment**. In that case, the product driver goes in **Context** as a force, and the **Decision** is the architectural commitment it produced.
+
+### `+"`adrm`"+` trigger list
+
+Decisions that affect the CLI contract, ADR file format, query behavior, lifecycle semantics, output schema, storage layout, or agent operating model are almost always architectural. Not every change to those surfaces is a commitment, but a change that fixes a contract downstream consumers will depend on is.
+
+### Anti-patterns
+
+Do not create an ADR for:
+
+- a roadmap ("we will add A, B, C")
+- a ticket ("add command X")
+- a changelog entry ("implemented back-references")
+- a bundle of unrelated decisions
+- a product strategy with no architectural consequence
+- vague commitments ("be flexible")
+- obvious decisions with no real alternatives
 
 ## Recovery
 
