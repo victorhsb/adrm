@@ -18,6 +18,22 @@ The initial command surface is intentionally agent-centric:
 go build ./cmd/adrm
 ```
 
+## Install
+
+Use the install script to build and place the binary on your PATH:
+
+```sh
+scripts/install.sh              # installs to ~/.local/bin or /usr/local/bin
+scripts/install.sh --dry-run      # preview the install plan
+scripts/install.sh --prefix /opt  # install to /opt/bin
+```
+
+To remove the binary later:
+
+```sh
+scripts/install.sh --uninstall
+```
+
 ## Quick start
 
 ```sh
