@@ -13,6 +13,13 @@ go run ./cmd/adrm commands
 go run ./cmd/adrm doctor
 ```
 
+If `doctor` reports a missing ADR directory, initialize storage first:
+
+```sh
+go run ./cmd/adrm init --dry-run
+go run ./cmd/adrm init
+```
+
 Use `go run ./cmd/adrm ...` during development. The installed binary may not
 exist or may be stale.
 
@@ -20,6 +27,8 @@ exist or may be stale.
 
 - `cmd/adrm`: CLI entrypoint.
 - `internal/adrm`: command handling, storage, output envelopes, registry, and tests.
+- `adrmskill`: bundled agent skill content, version/hash metadata, and install/update helpers.
+- `scripts`: build and install helpers (e.g. `scripts/install.sh`).
 - `docs/adr`: project ADRs managed by `adrm`.
 - `docs/commands.md`: command reference.
 - `docs/adr-format.md`: ADR markdown format.
@@ -31,18 +40,25 @@ exist or may be stale.
 Use the CLI to create or change ADRs. Do not hand-edit ADR lifecycle metadata
 unless the CLI cannot express the change.
 
-Before any ADR mutation:
+Before any ADR mutation, check storage and gather context:
 
 ```sh
+go run ./cmd/adrm doctor
 go run ./cmd/adrm list
 go run ./cmd/adrm search --query "relevant topic"
 go run ./cmd/adrm show --id ADR-0001
 ```
 
+If `doctor` reports missing storage, run `go run ./cmd/adrm init --dry-run` first.
+
 Always preview mutations first:
 
 ```sh
 go run ./cmd/adrm append --id ADR-0001 --title "Note" --body "Text." --dry-run
+go run ./cmd/adrm accept --id ADR-0001 --reason "Approved." --dry-run
+go run ./cmd/adrm reject --id ADR-0001 --reason "Chose another approach." --dry-run
+go run ./cmd/adrm supersede --id ADR-0001 --by ADR-0002 --reason "Replaced." --dry-run
+go run ./cmd/adrm deprecate --id ADR-0001 --reason "No longer used." --dry-run
 ```
 
 Apply only after the dry-run plan is correct, then verify:
@@ -59,7 +75,7 @@ operating model.
 
 Keep the CLI agent-friendly:
 
-- JSON output remains the default.
+- JSON output remains the default. Use `--format text` for human-readable output only; do not parse text in automation.
 - Every JSON response includes `schema_version`.
 - Read commands are deterministic and parseable.
 - Mutating commands support `--dry-run`.
@@ -89,8 +105,14 @@ For CLI smoke checks, prefer dry-run commands that do not leave files behind:
 go run ./cmd/adrm --adr-dir /private/tmp/adrm-smoke new --title "Smoke test" --dry-run
 ```
 
-If you build a binary for verification, remove the generated artifact before
-finishing:
+For a more complete install check, use the install script with `--dry-run`:
+
+```sh
+scripts/install.sh --dry-run
+```
+
+If you build a binary directly for verification, remove the generated artifact
+before finishing:
 
 ```sh
 go build ./cmd/adrm
@@ -104,6 +126,15 @@ workflow changes, update the matching document in the same change.
 
 Use examples that agents can run non-interactively. Prefer `--dry-run` examples
 for mutating commands.
+
+To make these instructions discoverable to other agents in this repository,
+install the bundled ADRM skill:
+
+```sh
+go run ./cmd/adrm skill install --dry-run
+go run ./cmd/adrm skill install
+go run ./cmd/adrm skill update --dry-run
+```
 
 ## Coding Guidelines
 
