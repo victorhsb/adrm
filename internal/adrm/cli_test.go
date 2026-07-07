@@ -443,6 +443,56 @@ func TestSkillUpdateRefusesLocalModificationWithoutForce(t *testing.T) {
 	}
 }
 
+func TestHumanReadableShorthandProducesText(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"-t", "commands"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d", code)
+	}
+	output := stdout.String()
+	if strings.HasPrefix(output, "{") || strings.Contains(output, "\"schema_version\"") {
+		t.Fatalf("expected text output with -t, got JSON:\n%s", output)
+	}
+	if !strings.Contains(output, "commands:") || !strings.Contains(output, "global flags:") {
+		t.Fatalf("expected text-rendered commands output:\n%s", output)
+	}
+	if !strings.Contains(output, "-t") {
+		t.Fatalf("expected -t to appear in global flags listing:\n%s", output)
+	}
+}
+
+func TestHumanReadableShorthandOverridesJSON(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"--format", "json", "-t", "commands"}, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("code = %d", code)
+	}
+	if strings.HasPrefix(stdout.String(), "{") {
+		t.Fatalf("expected -t to override --format json, got JSON:\n%s", stdout.String())
+	}
+}
+
+func TestCommandsExposeHumanReadableFlag(t *testing.T) {
+	_, env := runForTest(t, "commands")
+	data := env["data"].(map[string]any)
+	flags := data["global_flags"].([]any)
+	var sawHumanReadable bool
+	for _, raw := range flags {
+		flag := raw.(map[string]any)
+		if flag["name"] == "-t" {
+			sawHumanReadable = true
+			if flag["purpose"] == "" {
+				t.Fatalf("-t flag missing purpose: %#v", flag)
+			}
+		}
+	}
+	if !sawHumanReadable {
+		t.Fatalf("global flags missing -t: %#v", flags)
+	}
+}
+
 func testManagedSkillContent(body string) string {
 	payload := strings.TrimSpace(`---
 name: adrm

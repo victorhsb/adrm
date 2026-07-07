@@ -17,14 +17,19 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	global := flag.NewFlagSet("adrm", flag.ContinueOnError)
 	global.SetOutput(stderr)
 	opts := GlobalOptions{}
+	humanReadable := false
 	global.StringVar(&opts.ADRDir, "adr-dir", defaultADRDir, "ADR directory")
 	global.StringVar(&opts.Format, "format", "json", "output format: json or text")
+	global.BoolVar(&humanReadable, "t", false, "shorthand for --format text")
 	if err := global.Parse(args); err != nil {
 		writeEnvelope(stdout, usageError("adrm", err.Error()), "json")
 		return exitUsage
 	}
+	if humanReadable {
+		opts.Format = "text"
+	}
 	if opts.Format != "json" && opts.Format != "text" {
-		writeEnvelope(stdout, errorEnvelope("adrm", "invalid_format", "usage", "format must be json or text", "Use --format json or --format text."), "json")
+		writeEnvelope(stdout, errorEnvelope("adrm", "invalid_format", "usage", "format must be json or text", "Use --format json or --format text, or -t for text."), "json")
 		return exitUsage
 	}
 	remaining := global.Args()
@@ -89,6 +94,7 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 			"global_flags": []map[string]string{
 				{"name": "--adr-dir", "default": defaultADRDir, "purpose": "Select ADR storage directory."},
 				{"name": "--format", "default": "json", "purpose": "Choose json or text output."},
+				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
 			},
 		},
 		NextActions: []NextAction{{Command: "adrm doctor", Description: "Check if the ADR directory is ready.", Safety: "read-only"}},

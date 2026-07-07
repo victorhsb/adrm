@@ -36,6 +36,7 @@ Fields:
 
 - `--adr-dir`: ADR storage directory. Default: `docs/adr`.
 - `--format`: output format. Values: `json`, `text`. Default: `json`.
+- `-t`: shorthand for `--format text`.
 
 ## `commands`
 
