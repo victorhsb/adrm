@@ -1,8 +1,10 @@
 # ADR File Format
 
-`adrm` stores ADRs as markdown files with a small front matter block.
+`adrm` stores ADRs as markdown files with a small front matter block. ADRs and
+SPECs share the same parseable shape; the `kind` front-matter field selects the
+document type. See `docs/spec-format.md` for the SPEC body.
 
-Default directory:
+Default ADR directory:
 
 ```text
 docs/adr
@@ -18,6 +20,7 @@ Default filename pattern:
 
 ```markdown
 ---
+kind: adr
 id: ADR-0001
 title: Use SQLite for local index
 status: proposed
@@ -31,6 +34,8 @@ deprecated_by:
 
 Fields:
 
+- `kind`: document kind. `adr` for architecture decisions. Absent values
+  default to `adr` for backward compatibility with older ADR files.
 - `id`: stable ADR id. Format: `ADR-0001`.
 - `title`: short decision title.
 - `status`: one of `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`.

@@ -12,14 +12,23 @@ import (
 )
 
 type Store struct {
-	Dir string
+	Dir  string
+	Kind string
 }
 
-func NewStore(dir string) Store {
-	if dir == "" {
-		dir = defaultADRDir
+func NewStore(dir, kind string) Store {
+	if kind == "" {
+		kind = KindADR
 	}
-	return Store{Dir: dir}
+	if dir == "" {
+		switch kind {
+		case KindSPEC:
+			dir = defaultSpecDir
+		default:
+			dir = defaultADRDir
+		}
+	}
+	return Store{Dir: dir, Kind: kind}
 }
 
 func (s Store) Exists() bool {
@@ -48,15 +57,21 @@ func (s Store) List() ([]ADR, error) {
 		adrs = append(adrs, adr)
 	}
 	sort.Slice(adrs, func(i, j int) bool {
+		if adrs[i].Kind != adrs[j].Kind {
+			return adrs[i].Kind < adrs[j].Kind
+		}
 		return adrs[i].Number < adrs[j].Number
 	})
 	return adrs, nil
 }
 
 func (s Store) Read(id string) (ADR, error) {
-	normalized, err := normalizeID(id)
+	kind, normalized, err := normalizeID(id)
 	if err != nil {
 		return ADR{}, err
+	}
+	if kind != "" && kind != s.Kind {
+		return ADR{}, os.ErrNotExist
 	}
 	adrs, err := s.List()
 	if err != nil {
@@ -79,6 +94,9 @@ func (s Store) ReadPath(path string) (ADR, error) {
 	if err != nil {
 		return ADR{}, fmt.Errorf("%s: %w", path, err)
 	}
+	if adr.Kind == "" {
+		adr.Kind = s.Kind
+	}
 	adr.Path = path
 	return adr, nil
 }
@@ -100,7 +118,7 @@ func (s Store) NextNumber() (int, error) {
 	return max + 1, nil
 }
 
-func (s Store) WriteNew(title, status string, tags []string, context, decision, consequences string) (ADR, error) {
+func (s Store) WriteNew(title, status string, tags []string, sections map[string]string) (ADR, error) {
 	if err := s.Init(); err != nil {
 		return ADR{}, err
 	}
@@ -109,7 +127,8 @@ func (s Store) WriteNew(title, status string, tags []string, context, decision, 
 		return ADR{}, err
 	}
 	adr := ADR{
-		ID:     formatID(next),
+		Kind:   s.Kind,
+		ID:     formatID(s.Kind, next),
 		Number: next,
 		Title:  title,
 		Status: status,
@@ -117,7 +136,13 @@ func (s Store) WriteNew(title, status string, tags []string, context, decision, 
 		Tags:   cleanList(tags),
 	}
 	adr.Path = filepath.Join(s.Dir, fmt.Sprintf("%04d-%s.md", next, slugify(title)))
-	body := renderADR(adr, context, decision, consequences)
+	var body string
+	switch s.Kind {
+	case KindSPEC:
+		body = renderSPEC(adr, sections)
+	default:
+		body = renderADR(adr, sections)
+	}
 	if err := os.WriteFile(adr.Path, []byte(body), 0o644); err != nil {
 		return ADR{}, err
 	}
@@ -127,9 +152,9 @@ func (s Store) WriteNew(title, status string, tags []string, context, decision, 
 
 func (s Store) Save(adr ADR) error {
 	if adr.Path == "" {
-		return fmt.Errorf("ADR has no path")
+		return fmt.Errorf("document has no path")
 	}
-	body := renderExistingADR(adr)
+	body := renderExisting(adr)
 	return os.WriteFile(adr.Path, []byte(body), 0o644)
 }
 
@@ -155,11 +180,19 @@ func parseADR(body string) (ADR, error) {
 		meta[strings.TrimSpace(key)] = strings.TrimSpace(value)
 	}
 	id := meta["id"]
+	kind := normalizeKind(meta["kind"])
+	if kind == "" {
+		kind = kindFromID(id)
+	}
+	if kind == "" {
+		kind = KindADR
+	}
 	num, err := numberFromID(id)
 	if err != nil {
 		return ADR{}, err
 	}
 	adr := ADR{
+		Kind:         kind,
 		ID:           id,
 		Number:       num,
 		Title:        meta["title"],
@@ -174,7 +207,10 @@ func parseADR(body string) (ADR, error) {
 	return adr, nil
 }
 
-func renderADR(adr ADR, context, decision, consequences string) string {
+func renderADR(adr ADR, sections map[string]string) string {
+	context := sections["context"]
+	decision := sections["decision"]
+	consequences := sections["consequences"]
 	return renderFrontMatter(adr) + fmt.Sprintf(`# %s: %s
 
 ## Status
@@ -195,7 +231,36 @@ func renderADR(adr ADR, context, decision, consequences string) string {
 `, adr.ID, adr.Title, adr.Status, defaultText(context, "TBD"), defaultText(decision, "TBD"), defaultText(consequences, "TBD"))
 }
 
-func renderExistingADR(adr ADR) string {
+func renderSPEC(adr ADR, sections map[string]string) string {
+	context := sections["context"]
+	requirements := sections["requirements"]
+	constraints := sections["constraints"]
+	acceptance := sections["acceptance"]
+	return renderFrontMatter(adr) + fmt.Sprintf(`# %s: %s
+
+## Status
+
+%s
+
+## Context
+
+%s
+
+## Requirements
+
+%s
+
+## Constraints
+
+%s
+
+## Acceptance Criteria
+
+%s
+`, adr.ID, adr.Title, adr.Status, defaultText(context, "TBD"), defaultText(requirements, "TBD"), defaultText(constraints, "TBD"), defaultText(acceptance, "TBD"))
+}
+
+func renderExisting(adr ADR) string {
 	content := adr.Content
 	if !strings.HasPrefix(content, "# ") {
 		content = fmt.Sprintf("# %s: %s\n\n%s", adr.ID, adr.Title, content)
@@ -205,6 +270,7 @@ func renderExistingADR(adr ADR) string {
 
 func renderFrontMatter(adr ADR) string {
 	return fmt.Sprintf(`---
+kind: %s
 id: %s
 title: %s
 status: %s
@@ -214,36 +280,79 @@ supersedes: %s
 superseded_by: %s
 deprecated_by: %s
 ---
-`, adr.ID, adr.Title, adr.Status, adr.Date, strings.Join(adr.Tags, ", "), strings.Join(adr.Supersedes, ", "), adr.SupersededBy, adr.DeprecatedBy)
+`, adr.Kind, adr.ID, adr.Title, adr.Status, adr.Date, strings.Join(adr.Tags, ", "), strings.Join(adr.Supersedes, ", "), adr.SupersededBy, adr.DeprecatedBy)
 }
 
-func normalizeID(id string) (string, error) {
+// normalizeID parses a user-supplied id and returns the kind it refers to
+// (empty when the input is a bare number, which defaults to ADR), the
+// normalized id, and an error.
+func normalizeID(id string) (kind, normalized string, err error) {
 	id = strings.TrimSpace(strings.ToUpper(id))
 	id = strings.TrimPrefix(id, "#")
-	if strings.HasPrefix(id, "ADR-") {
-		num, err := strconv.Atoi(strings.TrimPrefix(id, "ADR-"))
-		if err != nil {
-			return "", fmt.Errorf("invalid ADR id %q", id)
+	for _, k := range []string{KindADR, KindSPEC} {
+		prefix := kindPrefix(k)
+		if strings.HasPrefix(id, prefix) {
+			num, parseErr := strconv.Atoi(strings.TrimPrefix(id, prefix))
+			if parseErr != nil {
+				return "", "", fmt.Errorf("invalid id %q", id)
+			}
+			return k, formatID(k, num), nil
 		}
-		return formatID(num), nil
 	}
-	num, err := strconv.Atoi(id)
-	if err != nil {
-		return "", fmt.Errorf("invalid ADR id %q", id)
+	num, parseErr := strconv.Atoi(id)
+	if parseErr != nil {
+		return "", "", fmt.Errorf("invalid id %q", id)
 	}
-	return formatID(num), nil
+	return "", formatID(KindADR, num), nil
 }
 
 func numberFromID(id string) (int, error) {
-	normalized, err := normalizeID(id)
+	_, normalized, err := normalizeID(id)
 	if err != nil {
 		return 0, err
 	}
-	return strconv.Atoi(strings.TrimPrefix(normalized, "ADR-"))
+	for _, k := range []string{KindADR, KindSPEC} {
+		prefix := kindPrefix(k)
+		if strings.HasPrefix(normalized, prefix) {
+			return strconv.Atoi(strings.TrimPrefix(normalized, prefix))
+		}
+	}
+	return 0, fmt.Errorf("invalid id %q", id)
 }
 
-func formatID(n int) string {
-	return fmt.Sprintf("ADR-%04d", n)
+func formatID(kind string, n int) string {
+	return fmt.Sprintf("%s%04d", kindPrefix(kind), n)
+}
+
+func kindPrefix(kind string) string {
+	switch kind {
+	case KindSPEC:
+		return PrefixSPEC
+	default:
+		return PrefixADR
+	}
+}
+
+func kindFromID(id string) string {
+	upper := strings.ToUpper(strings.TrimSpace(id))
+	switch {
+	case strings.HasPrefix(upper, PrefixSPEC):
+		return KindSPEC
+	case strings.HasPrefix(upper, PrefixADR):
+		return KindADR
+	default:
+		return ""
+	}
+}
+
+func normalizeKind(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch value {
+	case KindADR, KindSPEC:
+		return value
+	default:
+		return ""
+	}
 }
 
 func parseList(value string) []string {

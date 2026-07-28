@@ -507,3 +507,193 @@ description: Manage Architecture Decision Records with the adrm CLI in agent-led
 	hash := "sha256:" + fmt.Sprintf("%x", sum[:])
 	return strings.Replace(payload, "<!-- adrm-skill-version: 0 -->\n", "<!-- adrm-skill-version: 0 -->\n<!-- adrm-skill-hash: "+hash+" -->\n", 1)
 }
+
+func runKindTest(t *testing.T, args ...string) (int, map[string]any) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := Run(args, &stdout, &stderr)
+	if stderr.Len() > 0 {
+		t.Logf("stderr: %s", stderr.String())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, stdout.String())
+	}
+	return code, env
+}
+
+func TestNewSpecDryRunDoesNotWriteFile(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Local query index", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("code = %d", code)
+	}
+	if env["status"] != "planned" {
+		t.Fatalf("status = %v", env["status"])
+	}
+	if _, err := os.Stat(spec); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created spec directory: %v", err)
+	}
+	data := env["data"].(map[string]any)
+	created := data["adr"].(map[string]any)
+	if created["kind"] != "spec" || created["id"] != "SPEC-0001" {
+		t.Fatalf("spec preview = %#v", created)
+	}
+}
+
+func TestCreateListSearchAndShowSpec(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Local query index", "--tags", "storage, query", "--context", "Agents need local lookup.", "--requirements", "Return ADRs by tag.", "--constraints", "No external deps.", "--acceptance", "list --tag storage works.")
+	if code != exitOK {
+		t.Fatalf("new spec code = %d", code)
+	}
+	created := env["data"].(map[string]any)["adr"].(map[string]any)
+	if created["id"] != "SPEC-0001" || created["kind"] != "spec" {
+		t.Fatalf("created spec = %#v", created)
+	}
+
+	code, env = runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "list", "--kind", "spec", "--tag", "storage")
+	if code != exitOK {
+		t.Fatalf("list code = %d", code)
+	}
+	if env["data"].(map[string]any)["count"] != float64(1) {
+		t.Fatalf("list data = %#v", env["data"])
+	}
+
+	code, env = runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "search", "--query", "requirements")
+	if code != exitOK {
+		t.Fatalf("search code = %d", code)
+	}
+	if env["data"].(map[string]any)["count"] != float64(1) {
+		t.Fatalf("search data = %#v", env["data"])
+	}
+
+	code, env = runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "show", "--id", "SPEC-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	shown := env["data"].(map[string]any)["adr"].(map[string]any)
+	if shown["kind"] != "spec" || shown["content"] == "" {
+		t.Fatalf("show spec = %#v", shown)
+	}
+	content := shown["content"].(string)
+	for _, section := range []string{"## Requirements", "## Constraints", "## Acceptance Criteria"} {
+		if !strings.Contains(content, section) {
+			t.Fatalf("spec content missing %s:\n%s", section, content)
+		}
+	}
+}
+
+func TestADRAndSPECNumberIndependently(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "First ADR"); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "First SPEC"); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "Second ADR"); code != exitOK {
+		t.Fatalf("second adr code = %d", code)
+	}
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "list")
+	if code != exitOK {
+		t.Fatalf("list code = %d", code)
+	}
+	data := env["data"].(map[string]any)
+	if data["count"] != float64(3) {
+		t.Fatalf("count = %v", data["count"])
+	}
+	adrs := data["adrs"].([]any)
+	ids := []string{}
+	for _, raw := range adrs {
+		ids = append(ids, raw.(map[string]any)["id"].(string))
+	}
+	if ids[0] != "ADR-0001" || ids[1] != "ADR-0002" || ids[2] != "SPEC-0001" {
+		t.Fatalf("ordered ids = %v", ids)
+	}
+}
+
+func TestSupersedeRejectsCrossKindReplacement(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "Old ADR"); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Replacement SPEC"); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "supersede", "--id", "ADR-0001", "--by", "SPEC-0001", "--dry-run")
+	if code != exitState {
+		t.Fatalf("cross-kind supersede code = %d env = %#v", code, env)
+	}
+	errData := env["error"].(map[string]any)
+	if errData["code"] != "cross_kind_supersede" {
+		t.Fatalf("error = %#v", errData)
+	}
+}
+
+func TestAcceptMutatesSpec(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Candidate spec"); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+	if code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "accept", "--id", "SPEC-0001", "--reason", "Approved.", "--dry-run"); code != exitOK || env["status"] != "planned" {
+		t.Fatalf("accept dry-run code=%d env=%#v", code, env)
+	}
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "accept", "--id", "SPEC-0001", "--reason", "Approved."); code != exitOK {
+		t.Fatalf("accept code = %d", code)
+	}
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "show", "--id", "SPEC-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	shown := env["data"].(map[string]any)["adr"].(map[string]any)
+	if shown["status"] != "accepted" {
+		t.Fatalf("status = %v", shown["status"])
+	}
+	content := shown["content"].(string)
+	if !strings.Contains(content, "## History: Accepted") || !strings.Contains(content, "Approved.") {
+		t.Fatalf("spec content missing accepted history:\n%s", content)
+	}
+}
+
+func TestDoctorReportsMissingSpecDirectory(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "init", "--kind", "adr"); code != exitOK {
+		t.Fatalf("init code = %d", code)
+	}
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "doctor")
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("doctor status = %v", env["status"])
+	}
+	var sawSpecWarning bool
+	for _, raw := range env["data"].(map[string]any)["diagnostics"].([]any) {
+		d := raw.(map[string]any)
+		if d["name"] == "spec_directory" && d["status"] == "warning" {
+			sawSpecWarning = true
+		}
+	}
+	if !sawSpecWarning {
+		t.Fatalf("doctor missing spec_directory warning: %#v", env["data"])
+	}
+}
+
+func TestInitKindRejectsInvalidKind(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "init", "--kind", "rfc")
+	if code != exitUsage {
+		t.Fatalf("code = %d env = %#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "invalid_kind" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+}

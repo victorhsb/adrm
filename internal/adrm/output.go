@@ -148,7 +148,6 @@ func renderListText(out io.Writer, payload map[string]any) {
 		}
 	}
 }
-
 func renderShowText(out io.Writer, payload map[string]any) {
 	var data struct {
 		ADR ADR `json:"adr"`
@@ -161,8 +160,8 @@ func renderShowText(out io.Writer, payload map[string]any) {
 
 func renderSearchText(out io.Writer, payload map[string]any) {
 	var data struct {
-		Query   string         `json:"query"`
-		Count   int            `json:"count"`
+		Query   string           `json:"query"`
+		Count   int              `json:"count"`
 		Results []map[string]any `json:"results"`
 	}
 	if !jsonCopy(payload, &data) {
@@ -237,6 +236,9 @@ func renderSkillText(out io.Writer, payload map[string]any) {
 
 func renderADRText(out io.Writer, adr ADR, includeContent bool) {
 	fmt.Fprintln(out, "adr:")
+	if adr.Kind != "" {
+		fmt.Fprintf(out, "  kind: %s\n", adr.Kind)
+	}
 	fmt.Fprintf(out, "  id: %s\n", adr.ID)
 	fmt.Fprintf(out, "  title: %s\n", adr.Title)
 	fmt.Fprintf(out, "  status: %s\n", adr.Status)

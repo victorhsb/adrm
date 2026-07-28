@@ -3,7 +3,15 @@ package adrm
 const (
 	SchemaVersion = "adrm.v1"
 
-	defaultADRDir = "docs/adr"
+	defaultADRDir  = "docs/adr"
+	defaultSpecDir = "docs/spec"
+
+	KindADR  = "adr"
+	KindSPEC = "spec"
+
+	// PrefixADR and PrefixSPEC are the stable id prefixes used in filenames and selectors.
+	PrefixADR  = "ADR-"
+	PrefixSPEC = "SPEC-"
 )
 
 type Envelope struct {
@@ -38,6 +46,7 @@ type NextAction struct {
 }
 
 type ADR struct {
+	Kind         string   `json:"kind"`
 	ID           string   `json:"id"`
 	Number       int      `json:"number"`
 	Title        string   `json:"title"`
@@ -64,6 +73,12 @@ type OpPlan struct {
 }
 
 type GlobalOptions struct {
-	ADRDir string
-	Format string
+	ADRDir  string
+	SpecDir string
+	Format  string
 }
+
+// Document is an alias for ADR. The CLI manages multiple kinds of documents
+// (ADR and SPEC today); they share the same parseable shape, so ADR remains
+// the backing struct while Document is the preferred name in new code.
+type Document = ADR

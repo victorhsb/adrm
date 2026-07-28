@@ -1,6 +1,7 @@
 package adrm
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,17 +14,79 @@ import (
 	"github.com/victorhsb/adrm/adrmskill"
 )
 
+// Repo holds the stores for every supported document kind. The CLI focuses on
+// ADRs and SPECs; both share the same parseable shape but live in separate
+// directories with independent numbering.
+type Repo struct {
+	ADR  Store
+	Spec Store
+}
+
+func NewRepo(opts GlobalOptions) Repo {
+	return Repo{
+		ADR:  NewStore(opts.ADRDir, KindADR),
+		Spec: NewStore(opts.SpecDir, KindSPEC),
+	}
+}
+
+// StoreForKind returns the store for the requested kind. Unknown or empty
+// kinds resolve to the ADR store, which is the default document kind.
+func (r Repo) StoreForKind(kind string) Store {
+	if kind == KindSPEC {
+		return r.Spec
+	}
+	return r.ADR
+}
+
+// StoreForID selects a store by inspecting the id prefix. Bare numbers and
+// ADR- prefixed ids resolve to the ADR store; SPEC- prefixed ids resolve to
+// the SPEC store.
+func (r Repo) StoreForID(id string) (Store, error) {
+	kind, _, err := normalizeID(id)
+	if err != nil {
+		return Store{}, err
+	}
+	return r.StoreForKind(kind), nil
+}
+
+// All returns every parseable document across both stores, in stable order.
+// Missing directories are treated as empty rather than errors so that a fresh
+// repository with only one kind initialized still lists cleanly.
+func (r Repo) All() ([]ADR, error) {
+	var docs []ADR
+	for _, store := range []Store{r.ADR, r.Spec} {
+		adrs, err := store.List()
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		docs = append(docs, adrs...)
+	}
+	sort.Slice(docs, func(i, j int) bool {
+		if docs[i].Kind != docs[j].Kind {
+			return docs[i].Kind < docs[j].Kind
+		}
+		return docs[i].Number < docs[j].Number
+	})
+	return docs, nil
+}
+
 func Run(args []string, stdout, stderr io.Writer) int {
 	global := flag.NewFlagSet("adrm", flag.ContinueOnError)
 	global.SetOutput(stderr)
 	opts := GlobalOptions{}
 	humanReadable := false
 	global.StringVar(&opts.ADRDir, "adr-dir", defaultADRDir, "ADR directory")
+	global.StringVar(&opts.SpecDir, "spec-dir", defaultSpecDir, "SPEC directory")
 	global.StringVar(&opts.Format, "format", "json", "output format: json or text")
 	global.BoolVar(&humanReadable, "t", false, "shorthand for --format text")
-	if err := global.Parse(args); err != nil {
-		writeEnvelope(stdout, usageError("adrm", err.Error()), "json")
+	if help, err := parseFlags(global, args); err != nil {
+		writeEnvelope(stdout, usageError("adrm", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if humanReadable {
 		opts.Format = "text"
@@ -38,12 +101,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			Command: "adrm",
 			Status:  "ok",
 			Data: map[string]any{
-				"purpose":  "Manage Architecture Decision Records for agent workflows.",
+				"purpose":  "Manage Architecture Decision Records and Specs for agent workflows.",
 				"commands": commandNames(),
 			},
 			NextActions: []NextAction{
 				{Command: "adrm commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
-				{Command: "adrm doctor", Description: "Check ADR repository readiness.", Safety: "read-only"},
+				{Command: "adrm doctor", Description: "Check ADR and SPEC repository readiness.", Safety: "read-only"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -51,33 +114,33 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 	command := remaining[0]
 	commandArgs := remaining[1:]
-	store := NewStore(opts.ADRDir)
+	repo := NewRepo(opts)
 
 	switch command {
 	case "commands":
 		return runCommands(stdout, opts)
 	case "doctor":
-		return runDoctor(stdout, opts, store)
+		return runDoctor(stdout, opts, repo)
 	case "init":
-		return runInit(stdout, stderr, opts, store, commandArgs)
+		return runInit(stdout, stderr, opts, repo, commandArgs)
 	case "new":
-		return runNew(stdout, stderr, opts, store, commandArgs)
+		return runNew(stdout, stderr, opts, repo, commandArgs)
 	case "list":
-		return runList(stdout, stderr, opts, store, commandArgs)
+		return runList(stdout, stderr, opts, repo, commandArgs)
 	case "show":
-		return runShow(stdout, stderr, opts, store, commandArgs)
+		return runShow(stdout, stderr, opts, repo, commandArgs)
 	case "search":
-		return runSearch(stdout, stderr, opts, store, commandArgs)
+		return runSearch(stdout, stderr, opts, repo, commandArgs)
 	case "accept":
-		return runAccept(stdout, stderr, opts, store, commandArgs)
+		return runLifecycle(stdout, stderr, opts, repo, commandArgs, "accept", "accepted", "Accepted")
 	case "reject":
-		return runReject(stdout, stderr, opts, store, commandArgs)
+		return runLifecycle(stdout, stderr, opts, repo, commandArgs, "reject", "rejected", "Rejected")
 	case "supersede":
-		return runSupersede(stdout, stderr, opts, store, commandArgs)
+		return runSupersede(stdout, stderr, opts, repo, commandArgs)
 	case "deprecate":
-		return runDeprecate(stdout, stderr, opts, store, commandArgs)
+		return runDeprecate(stdout, stderr, opts, repo, commandArgs)
 	case "append":
-		return runAppend(stdout, stderr, opts, store, commandArgs)
+		return runAppend(stdout, stderr, opts, repo, commandArgs)
 	case "skill":
 		return runSkill(stdout, stderr, opts, commandArgs)
 	default:
@@ -93,58 +156,76 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 			"commands": commandRegistry(),
 			"global_flags": []map[string]string{
 				{"name": "--adr-dir", "default": defaultADRDir, "purpose": "Select ADR storage directory."},
+				{"name": "--spec-dir", "default": defaultSpecDir, "purpose": "Select SPEC storage directory."},
 				{"name": "--format", "default": "json", "purpose": "Choose json or text output."},
 				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
 			},
 		},
-		NextActions: []NextAction{{Command: "adrm doctor", Description: "Check if the ADR directory is ready.", Safety: "read-only"}},
+		NextActions: []NextAction{{Command: "adrm doctor", Description: "Check if the ADR and SPEC directories are ready.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
 
-func runDoctor(stdout io.Writer, opts GlobalOptions, store Store) int {
+func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 	checks := []Diagnostic{}
-	if !store.Exists() {
-		checks = append(checks, Diagnostic{Name: "adr_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: "Run `adrm init --dry-run`, then `adrm init`."})
+	for _, store := range []Store{repo.ADR, repo.Spec} {
+		label := store.Kind
+		if !store.Exists() {
+			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `adrm init --kind %s --dry-run`, then `adrm init --kind %s`.", label, label)})
+			continue
+		}
+		checks = append(checks, Diagnostic{Name: label + "_directory", Status: "ok", Message: fmt.Sprintf("%s exists", store.Dir)})
+		adrs, err := store.List()
+		if err != nil {
+			env := errorEnvelope("doctor", label+"_read_failed", "io", fmt.Sprintf("failed to read %s directory", label), "Check file permissions and front matter.")
+			env.Error.Diagnostics = checks
+			writeEnvelope(stdout, env, opts.Format)
+			return exitIO
+		}
+		checks = append(checks, Diagnostic{Name: label + "_parse", Status: "ok", Message: fmt.Sprintf("%d %s files parsed", len(adrs), label)})
+	}
+	anyMissing := !repo.ADR.Exists() || !repo.Spec.Exists()
+	if anyMissing {
 		writeEnvelope(stdout, Envelope{
 			Command: "doctor",
 			Status:  "warning",
 			Data:    map[string]any{"diagnostics": checks},
 			NextActions: []NextAction{
-				{Command: "adrm init --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
-				{Command: "adrm init", Description: "Create the ADR directory.", Safety: "write"},
+				{Command: "adrm init --kind adr --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
+				{Command: "adrm init --kind spec --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
 			},
 		}, opts.Format)
 		return exitOK
 	}
-	checks = append(checks, Diagnostic{Name: "adr_directory", Status: "ok", Message: fmt.Sprintf("%s exists", store.Dir)})
-	adrs, err := store.List()
-	if err != nil {
-		env := errorEnvelope("doctor", "adr_read_failed", "io", "failed to read ADR directory", "Check file permissions and ADR front matter.")
-		env.Error.Diagnostics = checks
-		writeEnvelope(stdout, env, opts.Format)
-		return exitIO
-	}
-	checks = append(checks, Diagnostic{Name: "adr_parse", Status: "ok", Message: fmt.Sprintf("%d ADR files parsed", len(adrs))})
 	writeEnvelope(stdout, Envelope{
 		Command: "doctor",
 		Data:    map[string]any{"diagnostics": checks},
 		NextActions: []NextAction{
-			{Command: "adrm list", Description: "Inspect ADR inventory.", Safety: "read-only"},
-			{Command: `adrm new --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
+			{Command: "adrm list", Description: "Inspect ADR and SPEC inventory.", Safety: "read-only"},
+			{Command: `adrm new --kind adr --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
+			{Command: `adrm new --kind spec --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runInit(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "init")
+	kind := fs.String("kind", KindADR, "document kind: adr or spec")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("init", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
-	plan := Plan{DryRun: *dryRun, ChangesMade: false, Operations: []OpPlan{{Action: "mkdir", Path: store.Dir, Description: "Create ADR directory if missing."}}}
+	kindValue := normalizeKind(*kind)
+	if kindValue == "" {
+		writeEnvelope(stdout, errorEnvelope("init", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec."), opts.Format)
+		return exitUsage
+	}
+	store := repo.StoreForKind(kindValue)
+	plan := Plan{DryRun: *dryRun, ChangesMade: false, Operations: []OpPlan{{Action: "mkdir", Path: store.Dir, Description: fmt.Sprintf("Create %s directory if missing.", kindValue)}}}
 	if *dryRun {
 		writeEnvelope(stdout, Envelope{
 			Command: "init",
@@ -153,12 +234,12 @@ func runInit(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []s
 			Warnings: []string{
 				"No changes were made.",
 			},
-			NextActions: []NextAction{{Command: "adrm init", Description: "Apply this directory creation plan.", Safety: "write"}},
+			NextActions: []NextAction{{Command: fmt.Sprintf("adrm init --kind %s", kindValue), Description: "Apply this directory creation plan.", Safety: "write"}},
 		}, opts.Format)
 		return exitOK
 	}
 	if err := store.Init(); err != nil {
-		writeEnvelope(stdout, errorEnvelope("init", "init_failed", "io", err.Error(), "Check directory permissions or choose another --adr-dir."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("init", "init_failed", "io", err.Error(), "Check directory permissions or choose another directory flag."), opts.Format)
 		return exitIO
 	}
 	plan.ChangesMade = true
@@ -166,27 +247,38 @@ func runInit(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []s
 		Command: "init",
 		Data:    plan,
 		NextActions: []NextAction{
-			{Command: `adrm new --title "First decision" --dry-run`, Description: "Preview creating the first ADR.", Safety: "preview"},
+			{Command: fmt.Sprintf(`adrm new --kind %s --title "First %s" --dry-run`, kindValue, kindValue), Description: "Preview creating the first document.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runNew(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "new")
-	title := fs.String("title", "", "ADR title")
-	status := fs.String("status", "proposed", "ADR status")
+	kind := fs.String("kind", KindADR, "document kind: adr or spec")
+	title := fs.String("title", "", "document title")
+	status := fs.String("status", "proposed", "document status")
 	tags := fs.String("tags", "", "comma-separated tags")
 	context := fs.String("context", "", "context section")
-	decision := fs.String("decision", "", "decision section")
-	consequences := fs.String("consequences", "", "consequences section")
+	decision := fs.String("decision", "", "decision section (adr)")
+	consequences := fs.String("consequences", "", "consequences section (adr)")
+	requirements := fs.String("requirements", "", "requirements section (spec)")
+	constraints := fs.String("constraints", "", "constraints section (spec)")
+	acceptance := fs.String("acceptance", "", "acceptance criteria section (spec)")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("new", err.Error()), opts.Format)
+		return exitUsage
+	} else if help {
+		return exitOK
+	}
+	kindValue := normalizeKind(*kind)
+	if kindValue == "" {
+		writeEnvelope(stdout, errorEnvelope("new", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec."), opts.Format)
 		return exitUsage
 	}
 	if strings.TrimSpace(*title) == "" {
-		writeEnvelope(stdout, errorEnvelope("new", "missing_title", "usage", "--title is required", `Run adrm new --title "Short decision title" --dry-run.`), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("new", "missing_title", "usage", "--title is required", `Run adrm new --kind `+kindValue+` --title "Short title" --dry-run.`), opts.Format)
 		return exitUsage
 	}
 	statusValue := normalizeStatus(*status)
@@ -194,29 +286,31 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []st
 		writeEnvelope(stdout, errorEnvelope("new", "invalid_status", "usage", fmt.Sprintf("invalid status %q", *status), "Use proposed, accepted, rejected, superseded, or deprecated."), opts.Format)
 		return exitUsage
 	}
+	store := repo.StoreForKind(kindValue)
 	next, err := store.NextNumber()
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope("new", "next_number_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
 		return exitIO
 	}
 	path := filepath.Join(store.Dir, fmt.Sprintf("%04d-%s.md", next, slugify(*title)))
-	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "write_file", Path: path, Description: "Create new ADR markdown file."}}}
+	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "write_file", Path: path, Description: fmt.Sprintf("Create new %s markdown file.", kindValue)}}}
+	sections := newSections(kindValue, *context, *decision, *consequences, *requirements, *constraints, *acceptance)
 	if *dryRun {
 		writeEnvelope(stdout, Envelope{
 			Command: "new",
 			Status:  "planned",
 			Data: map[string]any{
 				"plan": plan,
-				"adr":  ADR{ID: formatID(next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
+				"adr":  ADR{Kind: kindValue, ID: formatID(kindValue, next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
-				{Command: strings.Join(append([]string{"adrm new", "--title", quoteForNextAction(*title), "--status", statusValue}, dryRunFreeArgs(*tags, *context, *decision, *consequences)...), " "), Description: "Apply this ADR creation plan.", Safety: "write"},
+				{Command: strings.Join(append([]string{"adrm new", "--kind", kindValue, "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kindValue, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
 			},
 		}, opts.Format)
 		return exitOK
 	}
-	adr, err := store.WriteNew(strings.TrimSpace(*title), statusValue, parseList(*tags), *context, *decision, *consequences)
+	adr, err := store.WriteNew(strings.TrimSpace(*title), statusValue, parseList(*tags), sections)
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope("new", "create_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
 		return exitIO
@@ -226,49 +320,108 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []st
 		Command: "new",
 		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the created ADR.", Safety: "read-only"},
-			{Command: "adrm list", Description: "Refresh ADR inventory.", Safety: "read-only"},
+			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the created document.", Safety: "read-only"},
+			{Command: fmt.Sprintf("adrm list --kind %s", kindValue), Description: "Refresh document inventory.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runList(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func newSections(kind, context, decision, consequences, requirements, constraints, acceptance string) map[string]string {
+	sections := map[string]string{"context": context}
+	switch kind {
+	case KindSPEC:
+		sections["requirements"] = requirements
+		sections["constraints"] = constraints
+		sections["acceptance"] = acceptance
+	default:
+		sections["decision"] = decision
+		sections["consequences"] = consequences
+	}
+	return sections
+}
+
+func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements, constraints, acceptance string) []string {
+	var args []string
+	if strings.TrimSpace(tags) != "" {
+		args = append(args, "--tags", quoteForNextAction(tags))
+	}
+	if strings.TrimSpace(context) != "" {
+		args = append(args, "--context", quoteForNextAction(context))
+	}
+	switch kind {
+	case KindSPEC:
+		if strings.TrimSpace(requirements) != "" {
+			args = append(args, "--requirements", quoteForNextAction(requirements))
+		}
+		if strings.TrimSpace(constraints) != "" {
+			args = append(args, "--constraints", quoteForNextAction(constraints))
+		}
+		if strings.TrimSpace(acceptance) != "" {
+			args = append(args, "--acceptance", quoteForNextAction(acceptance))
+		}
+	default:
+		if strings.TrimSpace(decision) != "" {
+			args = append(args, "--decision", quoteForNextAction(decision))
+		}
+		if strings.TrimSpace(consequences) != "" {
+			args = append(args, "--consequences", quoteForNextAction(consequences))
+		}
+	}
+	return args
+}
+
+func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "list")
+	kind := fs.String("kind", "", "filter by kind: adr, spec, or empty for all")
 	status := fs.String("status", "", "filter by status")
 	tag := fs.String("tag", "", "filter by tag")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("list", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
-	adrs, err := store.List()
+	kindValue := normalizeKind(*kind)
+	if *kind != "" && kindValue == "" {
+		writeEnvelope(stdout, errorEnvelope("list", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec, or omit it to list all."), opts.Format)
+		return exitUsage
+	}
+	docs, err := docsForKind(repo, kindValue)
 	if err != nil {
 		return handleReadError(stdout, opts, "list", err)
 	}
-	adrs = filterADRs(adrs, *status, *tag, "")
+	docs = filterADRs(docs, *status, *tag, "")
 	writeEnvelope(stdout, Envelope{
 		Command: "list",
 		Data: map[string]any{
-			"count": len(adrs),
-			"adrs":  summaries(adrs),
+			"count": len(docs),
+			"adrs":  summaries(docs),
 		},
 		NextActions: []NextAction{
-			{Command: "adrm show --id ADR-0001", Description: "Inspect a selected ADR id from the result set.", Safety: "read-only"},
-			{Command: "adrm search --query text", Description: "Search ADR content when the list is too broad.", Safety: "read-only"},
+			{Command: "adrm show --id ADR-0001", Description: "Inspect a selected id from the result set.", Safety: "read-only"},
+			{Command: "adrm search --query text", Description: "Search ADR and SPEC content when the list is too broad.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runShow(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "show")
-	id := fs.String("id", "", "ADR id")
-	if err := fs.Parse(args); err != nil {
+	id := fs.String("id", "", "document id")
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("show", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
 		writeEnvelope(stdout, errorEnvelope("show", "missing_id", "usage", "--id is required", "Use an id from `adrm list`."), opts.Format)
+		return exitUsage
+	}
+	store, err := repo.StoreForID(*id)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope("show", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -285,23 +438,31 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []s
 	return exitOK
 }
 
-func runSearch(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "search")
 	query := fs.String("query", "", "search query")
+	kind := fs.String("kind", "", "filter by kind: adr, spec, or empty for all")
 	status := fs.String("status", "", "filter by status")
 	tag := fs.String("tag", "", "filter by tag")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("search", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if fs.NArg() > 0 && strings.TrimSpace(*query) == "" {
 		*query = strings.Join(fs.Args(), " ")
 	}
-	adrs, err := store.List()
+	kindValue := normalizeKind(*kind)
+	if *kind != "" && kindValue == "" {
+		writeEnvelope(stdout, errorEnvelope("search", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec, or omit it to search all."), opts.Format)
+		return exitUsage
+	}
+	docs, err := docsForKind(repo, kindValue)
 	if err != nil {
 		return handleReadError(stdout, opts, "search", err)
 	}
-	results := filterADRs(adrs, *status, *tag, *query)
+	results := filterADRs(docs, *status, *tag, *query)
 	writeEnvelope(stdout, Envelope{
 		Command: "search",
 		Data: map[string]any{
@@ -314,25 +475,35 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, store Store, args [
 	return exitOK
 }
 
-func runAccept(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
-	return runLifecycle(stdout, stderr, opts, store, args, "accept", "accepted", "Accepted")
+func docsForKind(repo Repo, kind string) ([]ADR, error) {
+	if kind == "" {
+		return repo.All()
+	}
+	store := repo.StoreForKind(kind)
+	if !store.Exists() {
+		return []ADR{}, nil
+	}
+	return store.List()
 }
 
-func runReject(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
-	return runLifecycle(stdout, stderr, opts, store, args, "reject", "rejected", "Rejected")
-}
-
-func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string, command, status, historyTitle string) int {
+func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, command, status, historyTitle string) int {
 	fs := newCommandFlagSet(stderr, command)
-	id := fs.String("id", "", fmt.Sprintf("ADR id to %s", command))
+	id := fs.String("id", "", fmt.Sprintf("document id to %s", command))
 	reason := fs.String("reason", "", "reason")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
 		writeEnvelope(stdout, errorEnvelope(command, "missing_id", "usage", "--id is required", "Use an id from `adrm list`, then retry with --dry-run."), opts.Format)
+		return exitUsage
+	}
+	store, err := repo.StoreForID(*id)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -360,40 +531,52 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 	return exitOK
 }
 
-func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "supersede")
-	id := fs.String("id", "", "ADR id to supersede")
-	by := fs.String("by", "", "superseding ADR id")
+	id := fs.String("id", "", "document id to supersede")
+	by := fs.String("by", "", "superseding document id")
 	reason := fs.String("reason", "", "reason")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("supersede", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" || strings.TrimSpace(*by) == "" {
 		writeEnvelope(stdout, errorEnvelope("supersede", "missing_selector", "usage", "--id and --by are required", "Use ids from `adrm list`, then retry with --dry-run."), opts.Format)
+		return exitUsage
+	}
+	store, err := repo.StoreForID(*id)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
 	if err != nil {
 		return handleReadError(stdout, opts, "supersede", err)
 	}
-	byID, err := normalizeID(*by)
+	byKind, byID, err := normalizeID(*by)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_by_id", "usage", err.Error(), "Use an id like ADR-0002."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_by_id", "usage", err.Error(), "Use an id like ADR-0002 or SPEC-0002."), opts.Format)
 		return exitUsage
 	}
 	if adr.ID == byID {
-		writeEnvelope(stdout, errorEnvelope("supersede", "self_supersede", "state", "an ADR cannot supersede itself", "Choose a different --by ADR id."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "self_supersede", "state", "a document cannot supersede itself", "Choose a different --by id."), opts.Format)
 		return exitState
 	}
-	byADR, err := store.Read(byID)
+	byStore := repo.StoreForKind(byKind)
+	byADR, err := byStore.Read(byID)
 	if err != nil {
 		if os.IsNotExist(err) {
-			writeEnvelope(stdout, errorEnvelope("supersede", "superseding_adr_not_found", "state", fmt.Sprintf("superseding ADR %s was not found", byID), "Create or select the replacement ADR first, then retry with --dry-run."), opts.Format)
+			writeEnvelope(stdout, errorEnvelope("supersede", "superseding_adr_not_found", "state", fmt.Sprintf("superseding document %s was not found", byID), "Create or select the replacement document first, then retry with --dry-run."), opts.Format)
 			return exitNotFound
 		}
 		return handleReadError(stdout, opts, "supersede", err)
+	}
+	if adr.Kind != byADR.Kind {
+		writeEnvelope(stdout, errorEnvelope("supersede", "cross_kind_supersede", "state", fmt.Sprintf("%s (%s) cannot be superseded by %s (%s)", adr.ID, adr.Kind, byADR.ID, byADR.Kind), "Supersede within the same kind: replace an ADR with an ADR or a SPEC with a SPEC."), opts.Format)
+		return exitState
 	}
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{
 		{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=superseded and superseded_by=%s.", byID)},
@@ -415,14 +598,14 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 	originalBySupersedes := byADR.Supersedes
 	byADR.Supersedes = cleanList(append(byADR.Supersedes, adr.ID))
 
-	if err := store.Save(byADR); err != nil {
+	if err := byStore.Save(byADR); err != nil {
 		writeEnvelope(stdout, errorEnvelope("supersede", "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
 		return exitIO
 	}
 	if err := store.Save(adr); err != nil {
-		// Best-effort rollback: try to restore the replacement ADR's supersedes list.
+		// Best-effort rollback: try to restore the replacement document's supersedes list.
 		byADR.Supersedes = originalBySupersedes
-		_ = store.Save(byADR)
+		_ = byStore.Save(byADR)
 		writeEnvelope(stdout, errorEnvelope("supersede", "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
 		return exitIO
 	}
@@ -431,17 +614,24 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 	return exitOK
 }
 
-func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "deprecate")
-	id := fs.String("id", "", "ADR id to deprecate")
+	id := fs.String("id", "", "document id to deprecate")
 	reason := fs.String("reason", "", "reason")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("deprecate", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
 		writeEnvelope(stdout, errorEnvelope("deprecate", "missing_id", "usage", "--id is required", "Use an id from `adrm list`, then retry with --dry-run."), opts.Format)
+		return exitUsage
+	}
+	store, err := repo.StoreForID(*id)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope("deprecate", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -470,18 +660,25 @@ func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, store Store, arg
 	return exitOK
 }
 
-func runAppend(stdout, stderr io.Writer, opts GlobalOptions, store Store, args []string) int {
+func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "append")
-	id := fs.String("id", "", "ADR id")
+	id := fs.String("id", "", "document id")
 	title := fs.String("title", "", "appendix title")
 	body := fs.String("body", "", "appendix body")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("append", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" || strings.TrimSpace(*title) == "" || strings.TrimSpace(*body) == "" {
 		writeEnvelope(stdout, errorEnvelope("append", "missing_appendix_input", "usage", "--id, --title, and --body are required", "Use `adrm append --id ADR-0001 --title Note --body Text --dry-run`."), opts.Format)
+		return exitUsage
+	}
+	store, err := repo.StoreForID(*id)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope("append", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -540,9 +737,11 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 	fs := newCommandFlagSet(stderr, "skill install")
 	skillDir := fs.String("skill-dir", adrmskill.DefaultInstallDir, "skill installation directory")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("skill install", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	target := adrmskill.TargetPath(*skillDir)
 	if _, err := os.Stat(target); err == nil {
@@ -585,9 +784,11 @@ func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string)
 	skillDir := fs.String("skill-dir", adrmskill.DefaultInstallDir, "skill installation directory")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	force := fs.Bool("force", false, "overwrite locally modified skill file")
-	if err := fs.Parse(args); err != nil {
+	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("skill update", err.Error()), opts.Format)
 		return exitUsage
+	} else if help {
+		return exitOK
 	}
 	target := adrmskill.TargetPath(*skillDir)
 	content, err := os.ReadFile(target)
@@ -704,13 +905,24 @@ func newCommandFlagSet(stderr io.Writer, name string) *flag.FlagSet {
 	return fs
 }
 
+// parseFlags parses args with fs. When -h/--help is requested it returns
+// help=true and the flag package has already printed usage to the flagset
+// output, so the caller should return without emitting an envelope.
+func parseFlags(fs *flag.FlagSet, args []string) (help bool, err error) {
+	err = fs.Parse(args)
+	if errors.Is(err, flag.ErrHelp) {
+		return true, nil
+	}
+	return false, err
+}
+
 func usageError(command, message string) Envelope {
 	return errorEnvelope(command, "invalid_usage", "usage", message, "Run `adrm commands` to inspect required flags and examples.")
 }
 
 func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err error) int {
 	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `adrm doctor`; if the ADR directory is missing, run `adrm init`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `adrm doctor`; if the directory is missing, run `adrm init`."), opts.Format)
 		return exitNotFound
 	}
 	writeEnvelope(stdout, errorEnvelope(command, "adr_read_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
@@ -762,6 +974,7 @@ func filterADRs(adrs []ADR, status, tag, query string) []ADR {
 
 func adrMatches(adr ADR, query string) bool {
 	haystack := strings.ToLower(strings.Join([]string{
+		adr.Kind,
 		adr.ID,
 		adr.Title,
 		adr.Status,
@@ -863,7 +1076,7 @@ func dryRunEnvelope(command string, plan Plan, id, applyCommand string) Envelope
 		Warnings: []string{"No changes were made."},
 		NextActions: []NextAction{
 			{Command: applyCommand, Description: "Apply this previewed mutation.", Safety: "write"},
-			{Command: fmt.Sprintf("adrm show --id %s", id), Description: "Inspect current ADR before mutating it.", Safety: "read-only"},
+			{Command: fmt.Sprintf("adrm show --id %s", id), Description: "Inspect current document before mutating it.", Safety: "read-only"},
 		},
 	}
 }
@@ -873,7 +1086,7 @@ func mutationEnvelope(command string, plan Plan, adr ADR) Envelope {
 		Command: command,
 		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the updated ADR.", Safety: "read-only"},
+			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the updated document.", Safety: "read-only"},
 		},
 	}
 }
@@ -882,21 +1095,4 @@ func quoteForNextAction(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.ReplaceAll(value, `"`, `\"`)
 	return fmt.Sprintf("%q", value)
-}
-
-func dryRunFreeArgs(tags, context, decision, consequences string) []string {
-	var args []string
-	if strings.TrimSpace(tags) != "" {
-		args = append(args, "--tags", quoteForNextAction(tags))
-	}
-	if strings.TrimSpace(context) != "" {
-		args = append(args, "--context", quoteForNextAction(context))
-	}
-	if strings.TrimSpace(decision) != "" {
-		args = append(args, "--decision", quoteForNextAction(decision))
-	}
-	if strings.TrimSpace(consequences) != "" {
-		args = append(args, "--consequences", quoteForNextAction(consequences))
-	}
-	return args
 }

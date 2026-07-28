@@ -61,14 +61,25 @@ ADR ids are the composable selectors.
 ## Creating a decision
 
 ```sh
-adrm new --title "Use SQLite for local query index" --status proposed --dry-run
-adrm new --title "Use SQLite for local query index" --status proposed --tags "storage,query" --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes." --consequences "The index can be rebuilt from ADR markdown."
+adrm new --kind adr --title "Use SQLite for local query index" --status proposed --dry-run
+adrm new --kind adr --title "Use SQLite for local query index" --status proposed --tags "storage,query" --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes." --consequences "The index can be rebuilt from ADR markdown."
 adrm show --id ADR-0001
+```
+
+## Creating a spec
+
+SPEC files capture functional requirements with their own numbering and
+directory. They use the same lifecycle commands as ADRs.
+
+```sh
+adrm new --kind spec --title "Local query index" --status proposed --dry-run
+adrm new --kind spec --title "Local query index" --tags "storage,query" --context "Agents need fast local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
+adrm show --id SPEC-0001
 ```
 
 ## Accepting a decision
 
-Use `accept` to record that a proposed ADR has been approved.
+Use `accept` to record that a proposed ADR or SPEC has been approved.
 
 ```sh
 adrm show --id ADR-0001
@@ -78,7 +89,7 @@ adrm accept --id ADR-0001 --reason "Approved by the team."
 
 ## Rejecting a decision
 
-Use `reject` to record that an ADR was turned down, without removing it.
+Use `reject` to record that an ADR or SPEC was turned down, without removing it.
 
 ```sh
 adrm show --id ADR-0001
@@ -88,8 +99,8 @@ adrm reject --id ADR-0001 --reason "Chose a different approach."
 
 ## Superseding a decision
 
-Create or identify the replacement ADR first. `supersede` requires the replacement
-ADR to exist.
+Create or identify the replacement document first. `supersede` requires the
+replacement to exist and to be the same kind as the superseded document.
 
 ```sh
 adrm search --query "old query index"
@@ -102,7 +113,7 @@ adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the curre
 ## Deprecating a decision
 
 Use deprecation when a decision is no longer relevant and there is no direct
-replacement ADR.
+replacement.
 
 ```sh
 adrm deprecate --id ADR-0003 --reason "The component was removed." --dry-run
