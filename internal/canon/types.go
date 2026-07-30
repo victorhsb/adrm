@@ -1,7 +1,7 @@
-package adrm
+package canon
 
 const (
-	SchemaVersion = "adrm.v1"
+	SchemaVersion = "canon.v1"
 
 	defaultADRDir  = "docs/adr"
 	defaultSpecDir = "docs/spec"

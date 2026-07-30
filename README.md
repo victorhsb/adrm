@@ -1,21 +1,23 @@
-# adrm
+# canon
 
-`adrm` is a CLI for managing Architecture Decision Records in agent-led workflows.
+`canon` is a CLI for managing the canonical records of a codebase —
+Architecture Decision Records (ADRs) and software specifications (SPECs) — in
+agent-led workflows.
 
 The initial command surface is intentionally agent-centric:
 
 - JSON output by default, with a versioned envelope.
-- `adrm commands` for machine-readable discovery of commands, side effects, selectors, and examples.
+- `canon commands` for machine-readable discovery of commands, side effects, selectors, and examples.
 - `--dry-run` on every mutating command.
 - Structured errors with codes, categories, and suggested fixes.
 - Stable ADR ids like `ADR-0001` for command composition.
-- `adrm skill` plus `adrm skill install/update` to publish repository-local
+- `canon skill` plus `canon skill install/update` to publish repository-local
   agent instructions for operating the CLI.
 
 ## Build
 
 ```sh
-go build ./cmd/adrm
+go build ./cmd/canon
 ```
 
 ## Install
@@ -37,23 +39,23 @@ scripts/install.sh --uninstall
 ## Quick start
 
 ```sh
-adrm commands
-adrm doctor
-adrm init --dry-run
-adrm init
-adrm new --title "Use ADRM for decisions" --status proposed --dry-run
-adrm new --title "Use ADRM for decisions" --status proposed
-adrm list
-adrm show --id ADR-0001
-adrm skill install --dry-run
-adrm skill install
+canon commands
+canon doctor
+canon init --dry-run
+canon init
+canon new --title "Use CANON for decisions" --status proposed --dry-run
+canon new --title "Use CANON for decisions" --status proposed
+canon list
+canon show --id ADR-0001
+canon skill install --dry-run
+canon skill install
 ```
 
 ADRs are stored as markdown files in `docs/adr` by default. Use `--adr-dir` before
 the command to select another directory:
 
 ```sh
-adrm --adr-dir architecture/decisions list
+canon --adr-dir architecture/decisions list
 ```
 
 ## Documentation
@@ -65,12 +67,12 @@ adrm --adr-dir architecture/decisions list
 
 ## Design principles
 
-`adrm` is designed for agents first:
+`canon` is designed for agents first:
 
-- Discovery is structured through `adrm commands`.
+- Discovery is structured through `canon commands`.
 - Mutations are previewable with `--dry-run`.
 - Output is parseable JSON unless `--format text` is explicitly requested.
 - Failures include machine-readable error codes and suggested fixes.
 - Command outputs include stable ids and next actions for workflow composition.
-- The agent skill can be installed into `.agents/skills/adrm/SKILL.md` and later
+- The agent skill can be installed into `.agents/skills/canon/SKILL.md` and later
   updated through previewable CLI commands.

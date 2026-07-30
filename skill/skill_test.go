@@ -1,4 +1,4 @@
-package adrmskill
+package skill
 
 import (
 	"strings"
@@ -6,8 +6,8 @@ import (
 )
 
 func TestVersionBumped(t *testing.T) {
-	if Version != "3" {
-		t.Fatalf("expected skill version 3, got %q", Version)
+	if Version != "4" {
+		t.Fatalf("expected skill version 4, got %q", Version)
 	}
 }
 
@@ -21,7 +21,7 @@ func TestCommandExamplesDoNotRepeatDryRun(t *testing.T) {
 	// Dry-run discipline is stated once in the operating rules; command
 	// example lines must not repeat --dry-run variants.
 	for _, line := range strings.Split(content[idx:], "\n") {
-		if strings.HasPrefix(line, "adrm ") && strings.Contains(line, "--dry-run") {
+		if strings.HasPrefix(line, "canon ") && strings.Contains(line, "--dry-run") {
 			t.Fatalf("command example repeats --dry-run: %q", line)
 		}
 	}
@@ -36,7 +36,7 @@ func TestContentContainsADRGuidanceSection(t *testing.T) {
 		"It is non-obvious",
 		"It is narrow",
 		"## Technical vs product decisions",
-		"### `adrm` trigger list",
+		"### `canon` trigger list",
 		"## Anti-patterns",
 		"roadmap",
 		"ticket",
@@ -51,10 +51,10 @@ func TestContentContainsADRGuidanceSection(t *testing.T) {
 
 func TestContentContainsVersionAndHashComments(t *testing.T) {
 	content := Content()
-	if !strings.Contains(content, "<!-- adrm-skill-version: "+Version+" -->") {
+	if !strings.Contains(content, "<!-- canon-skill-version: "+Version+" -->") {
 		t.Fatalf("skill content missing version comment")
 	}
-	if !strings.Contains(content, "<!-- adrm-skill-hash: sha256:") {
+	if !strings.Contains(content, "<!-- canon-skill-hash: sha256:") {
 		t.Fatalf("skill content missing hash comment")
 	}
 }

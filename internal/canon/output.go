@@ -1,4 +1,4 @@
-package adrm
+package canon
 
 import (
 	"encoding/json"

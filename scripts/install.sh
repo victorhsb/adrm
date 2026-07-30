@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# install.sh — build and install the adrm binary.
+# install.sh — build and install the canon binary.
 #
 # Usage:
 #   scripts/install.sh
@@ -11,7 +11,7 @@ set -e
 #   scripts/install.sh --uninstall
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BINARY_NAME="adrm"
+BINARY_NAME="canon"
 
 if [ "$(id -u)" -eq 0 ]; then
     DEFAULT_PREFIX="/usr/local"
@@ -90,7 +90,7 @@ if [ "$UNINSTALL" -eq 1 ]; then
 fi
 
 if ! command -v go >/dev/null 2>&1; then
-    echo "Error: Go is required to build adrm but was not found in PATH" >&2
+    echo "Error: Go is required to build canon but was not found in PATH" >&2
     exit 1
 fi
 
@@ -98,7 +98,7 @@ BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 cd "$REPO_ROOT"
-go build -o "$BUILD_DIR/$BINARY_NAME" ./cmd/adrm
+go build -o "$BUILD_DIR/$BINARY_NAME" ./cmd/canon
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "Would install $TARGET"

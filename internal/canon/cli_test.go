@@ -1,4 +1,4 @@
-package adrm
+package canon
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/victorhsb/adrm/adrmskill"
+	"github.com/victorhsb/canon/skill"
 )
 
 func runForTest(t *testing.T, args ...string) (int, map[string]any) {
@@ -321,18 +321,18 @@ func TestSkillReturnsManagedContent(t *testing.T) {
 		t.Fatalf("code = %d", code)
 	}
 	data := env["data"].(map[string]any)
-	if data["filename"] != adrmskill.FileName {
+	if data["filename"] != skill.FileName {
 		t.Fatalf("filename = %v", data["filename"])
 	}
 	content := data["content"].(string)
-	if !strings.Contains(content, "name: adrm") || !strings.Contains(content, "adrm-skill-hash: sha256:") {
+	if !strings.Contains(content, "name: canon") || !strings.Contains(content, "canon-skill-hash: sha256:") {
 		t.Fatalf("content missing skill metadata:\n%s", content)
 	}
 }
 
 func TestSkillInstallDryRunAndInstall(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "skill")
-	target := adrmskill.TargetPath(dir)
+	target := skill.TargetPath(dir)
 
 	code, env := runForTest(t, "skill", "install", "--skill-dir", dir, "--dry-run")
 	if code != exitOK || env["status"] != "planned" {
@@ -354,7 +354,7 @@ func TestSkillInstallDryRunAndInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read installed skill: %v", err)
 	}
-	if string(content) != adrmskill.Content() {
+	if string(content) != skill.Content() {
 		t.Fatalf("installed content differs from bundled content")
 	}
 
@@ -389,7 +389,7 @@ func TestSkillUpdateCurrentNoops(t *testing.T) {
 
 func TestSkillUpdateManagedOlderVersion(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "skill")
-	target := adrmskill.TargetPath(dir)
+	target := skill.TargetPath(dir)
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -413,18 +413,18 @@ func TestSkillUpdateManagedOlderVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read updated skill: %v", err)
 	}
-	if string(content) != adrmskill.Content() {
+	if string(content) != skill.Content() {
 		t.Fatalf("updated content differs from bundled content")
 	}
 }
 
 func TestSkillUpdateRefusesLocalModificationWithoutForce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "skill")
-	target := adrmskill.TargetPath(dir)
+	target := skill.TargetPath(dir)
 	if code, env := runForTest(t, "skill", "install", "--skill-dir", dir); code != exitOK {
 		t.Fatalf("install code=%d env=%#v", code, env)
 	}
-	if err := os.WriteFile(target, []byte(adrmskill.Content()+"\nlocal edit\n"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(skill.Content()+"\nlocal edit\n"), 0o644); err != nil {
 		t.Fatalf("write local edit: %v", err)
 	}
 
@@ -495,17 +495,17 @@ func TestCommandsExposeHumanReadableFlag(t *testing.T) {
 
 func testManagedSkillContent(body string) string {
 	payload := strings.TrimSpace(`---
-name: adrm
-description: Manage Architecture Decision Records with the adrm CLI in agent-led workflows.
+name: canon
+description: Manage Architecture Decision Records with the canon CLI in agent-led workflows.
 ---
-<!-- adrm-skill-version: 0 -->
+<!-- canon-skill-version: 0 -->
 
-# ADRM Agent Skill
+# CANON Agent Skill
 
 `+body) + "\n"
 	sum := sha256.Sum256([]byte(payload))
 	hash := "sha256:" + fmt.Sprintf("%x", sum[:])
-	return strings.Replace(payload, "<!-- adrm-skill-version: 0 -->\n", "<!-- adrm-skill-version: 0 -->\n<!-- adrm-skill-hash: "+hash+" -->\n", 1)
+	return strings.Replace(payload, "<!-- canon-skill-version: 0 -->\n", "<!-- canon-skill-version: 0 -->\n<!-- canon-skill-hash: "+hash+" -->\n", 1)
 }
 
 func runKindTest(t *testing.T, args ...string) (int, map[string]any) {

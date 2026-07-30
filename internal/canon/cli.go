@@ -1,4 +1,4 @@
-package adrm
+package canon
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/victorhsb/adrm/adrmskill"
+	"github.com/victorhsb/canon/skill"
 )
 
 // Repo holds the stores for every supported document kind. The CLI focuses on
@@ -74,7 +74,7 @@ func (r Repo) All() ([]ADR, error) {
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
-	global := flag.NewFlagSet("adrm", flag.ContinueOnError)
+	global := flag.NewFlagSet("canon", flag.ContinueOnError)
 	global.SetOutput(stderr)
 	opts := GlobalOptions{}
 	humanReadable := false
@@ -83,7 +83,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	global.StringVar(&opts.Format, "format", "json", "output format: json or text")
 	global.BoolVar(&humanReadable, "t", false, "shorthand for --format text")
 	if help, err := parseFlags(global, args); err != nil {
-		writeEnvelope(stdout, usageError("adrm", err.Error()), opts.Format)
+		writeEnvelope(stdout, usageError("canon", err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
@@ -92,21 +92,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		opts.Format = "text"
 	}
 	if opts.Format != "json" && opts.Format != "text" {
-		writeEnvelope(stdout, errorEnvelope("adrm", "invalid_format", "usage", "format must be json or text", "Use --format json or --format text, or -t for text."), "json")
+		writeEnvelope(stdout, errorEnvelope("canon", "invalid_format", "usage", "format must be json or text", "Use --format json or --format text, or -t for text."), "json")
 		return exitUsage
 	}
 	remaining := global.Args()
 	if len(remaining) == 0 {
 		writeEnvelope(stdout, Envelope{
-			Command: "adrm",
+			Command: "canon",
 			Status:  "ok",
 			Data: map[string]any{
 				"purpose":  "Manage Architecture Decision Records and Specs for agent workflows.",
 				"commands": commandNames(),
 			},
 			NextActions: []NextAction{
-				{Command: "adrm commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
-				{Command: "adrm doctor", Description: "Check ADR and SPEC repository readiness.", Safety: "read-only"},
+				{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
+				{Command: "canon doctor", Description: "Check ADR and SPEC repository readiness.", Safety: "read-only"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -144,7 +144,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "skill":
 		return runSkill(stdout, stderr, opts, commandArgs)
 	default:
-		writeEnvelope(stdout, errorEnvelope(command, "unknown_command", "usage", fmt.Sprintf("unknown command %q", command), "Run `adrm commands` to inspect valid commands."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "unknown_command", "usage", fmt.Sprintf("unknown command %q", command), "Run `canon commands` to inspect valid commands."), opts.Format)
 		return exitUsage
 	}
 }
@@ -161,7 +161,7 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
 			},
 		},
-		NextActions: []NextAction{{Command: "adrm doctor", Description: "Check if the ADR and SPEC directories are ready.", Safety: "read-only"}},
+		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR and SPEC directories are ready.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
@@ -171,7 +171,7 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 	for _, store := range []Store{repo.ADR, repo.Spec} {
 		label := store.Kind
 		if !store.Exists() {
-			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `adrm init --kind %s --dry-run`, then `adrm init --kind %s`.", label, label)})
+			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon init --kind %s --dry-run`, then `canon init --kind %s`.", label, label)})
 			continue
 		}
 		checks = append(checks, Diagnostic{Name: label + "_directory", Status: "ok", Message: fmt.Sprintf("%s exists", store.Dir)})
@@ -191,8 +191,8 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 			Status:  "warning",
 			Data:    map[string]any{"diagnostics": checks},
 			NextActions: []NextAction{
-				{Command: "adrm init --kind adr --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
-				{Command: "adrm init --kind spec --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
+				{Command: "canon init --kind adr --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
+				{Command: "canon init --kind spec --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -201,9 +201,9 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		Command: "doctor",
 		Data:    map[string]any{"diagnostics": checks},
 		NextActions: []NextAction{
-			{Command: "adrm list", Description: "Inspect ADR and SPEC inventory.", Safety: "read-only"},
-			{Command: `adrm new --kind adr --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
-			{Command: `adrm new --kind spec --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
+			{Command: "canon list", Description: "Inspect ADR and SPEC inventory.", Safety: "read-only"},
+			{Command: `canon new --kind adr --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
+			{Command: `canon new --kind spec --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -234,7 +234,7 @@ func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 			Warnings: []string{
 				"No changes were made.",
 			},
-			NextActions: []NextAction{{Command: fmt.Sprintf("adrm init --kind %s", kindValue), Description: "Apply this directory creation plan.", Safety: "write"}},
+			NextActions: []NextAction{{Command: fmt.Sprintf("canon init --kind %s", kindValue), Description: "Apply this directory creation plan.", Safety: "write"}},
 		}, opts.Format)
 		return exitOK
 	}
@@ -247,7 +247,7 @@ func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 		Command: "init",
 		Data:    plan,
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf(`adrm new --kind %s --title "First %s" --dry-run`, kindValue, kindValue), Description: "Preview creating the first document.", Safety: "preview"},
+			{Command: fmt.Sprintf(`canon new --kind %s --title "First %s" --dry-run`, kindValue, kindValue), Description: "Preview creating the first document.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -278,7 +278,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 		return exitUsage
 	}
 	if strings.TrimSpace(*title) == "" {
-		writeEnvelope(stdout, errorEnvelope("new", "missing_title", "usage", "--title is required", `Run adrm new --kind `+kindValue+` --title "Short title" --dry-run.`), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("new", "missing_title", "usage", "--title is required", `Run canon new --kind `+kindValue+` --title "Short title" --dry-run.`), opts.Format)
 		return exitUsage
 	}
 	statusValue := normalizeStatus(*status)
@@ -289,7 +289,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	store := repo.StoreForKind(kindValue)
 	next, err := store.NextNumber()
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("new", "next_number_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("new", "next_number_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
 		return exitIO
 	}
 	path := filepath.Join(store.Dir, fmt.Sprintf("%04d-%s.md", next, slugify(*title)))
@@ -305,14 +305,14 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
-				{Command: strings.Join(append([]string{"adrm new", "--kind", kindValue, "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kindValue, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
+				{Command: strings.Join(append([]string{"canon new", "--kind", kindValue, "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kindValue, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
 			},
 		}, opts.Format)
 		return exitOK
 	}
 	adr, err := store.WriteNew(strings.TrimSpace(*title), statusValue, parseList(*tags), sections)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("new", "create_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("new", "create_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
 		return exitIO
 	}
 	plan.ChangesMade = true
@@ -320,8 +320,8 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 		Command: "new",
 		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the created document.", Safety: "read-only"},
-			{Command: fmt.Sprintf("adrm list --kind %s", kindValue), Description: "Refresh document inventory.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon show --id %s", adr.ID), Description: "Inspect the created document.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon list --kind %s", kindValue), Description: "Refresh document inventory.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -399,8 +399,8 @@ func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 			"adrs":  summaries(docs),
 		},
 		NextActions: []NextAction{
-			{Command: "adrm show --id ADR-0001", Description: "Inspect a selected id from the result set.", Safety: "read-only"},
-			{Command: "adrm search --query text", Description: "Search ADR and SPEC content when the list is too broad.", Safety: "read-only"},
+			{Command: "canon show --id ADR-0001", Description: "Inspect a selected id from the result set.", Safety: "read-only"},
+			{Command: "canon search --query text", Description: "Search ADR and SPEC content when the list is too broad.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -416,7 +416,7 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
-		writeEnvelope(stdout, errorEnvelope("show", "missing_id", "usage", "--id is required", "Use an id from `adrm list`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("show", "missing_id", "usage", "--id is required", "Use an id from `canon list`."), opts.Format)
 		return exitUsage
 	}
 	store, err := repo.StoreForID(*id)
@@ -432,7 +432,7 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 		Command: "show",
 		Data:    map[string]any{"adr": adr},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm append --id %s --title Note --body \"...\" --dry-run", adr.ID), Description: "Preview adding an appendix.", Safety: "preview"},
+			{Command: fmt.Sprintf("canon append --id %s --title Note --body \"...\" --dry-run", adr.ID), Description: "Preview adding an appendix.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -470,7 +470,7 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 			"count":   len(results),
 			"results": searchResults(results, *query),
 		},
-		NextActions: []NextAction{{Command: "adrm show --id ADR-0001", Description: "Inspect a selected result id.", Safety: "read-only"}},
+		NextActions: []NextAction{{Command: "canon show --id ADR-0001", Description: "Inspect a selected result id.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
@@ -498,7 +498,7 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
-		writeEnvelope(stdout, errorEnvelope(command, "missing_id", "usage", "--id is required", "Use an id from `adrm list`, then retry with --dry-run."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "missing_id", "usage", "--id is required", "Use an id from `canon list`, then retry with --dry-run."), opts.Format)
 		return exitUsage
 	}
 	store, err := repo.StoreForID(*id)
@@ -511,7 +511,7 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return handleReadError(stdout, opts, command, err)
 	}
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=%s and append history.", status)}}}
-	applyCommand := fmt.Sprintf("adrm %s --id %s", command, adr.ID)
+	applyCommand := fmt.Sprintf("canon %s --id %s", command, adr.ID)
 	if strings.TrimSpace(*reason) != "" {
 		applyCommand += " --reason " + quoteForNextAction(*reason)
 	}
@@ -544,7 +544,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" || strings.TrimSpace(*by) == "" {
-		writeEnvelope(stdout, errorEnvelope("supersede", "missing_selector", "usage", "--id and --by are required", "Use ids from `adrm list`, then retry with --dry-run."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "missing_selector", "usage", "--id and --by are required", "Use ids from `canon list`, then retry with --dry-run."), opts.Format)
 		return exitUsage
 	}
 	store, err := repo.StoreForID(*id)
@@ -582,7 +582,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=superseded and superseded_by=%s.", byID)},
 		{Action: "update_file", Path: byADR.Path, Description: fmt.Sprintf("Add %s to supersedes list.", adr.ID)},
 	}}
-	applyCommand := fmt.Sprintf("adrm supersede --id %s --by %s", adr.ID, byID)
+	applyCommand := fmt.Sprintf("canon supersede --id %s --by %s", adr.ID, byID)
 	if strings.TrimSpace(*reason) != "" {
 		applyCommand += " --reason " + quoteForNextAction(*reason)
 	}
@@ -626,7 +626,7 @@ func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" {
-		writeEnvelope(stdout, errorEnvelope("deprecate", "missing_id", "usage", "--id is required", "Use an id from `adrm list`, then retry with --dry-run."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("deprecate", "missing_id", "usage", "--id is required", "Use an id from `canon list`, then retry with --dry-run."), opts.Format)
 		return exitUsage
 	}
 	store, err := repo.StoreForID(*id)
@@ -639,7 +639,7 @@ func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return handleReadError(stdout, opts, "deprecate", err)
 	}
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: "Set status=deprecated and append history."}}}
-	applyCommand := fmt.Sprintf("adrm deprecate --id %s", adr.ID)
+	applyCommand := fmt.Sprintf("canon deprecate --id %s", adr.ID)
 	if strings.TrimSpace(*reason) != "" {
 		applyCommand += " --reason " + quoteForNextAction(*reason)
 	}
@@ -673,7 +673,7 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 		return exitOK
 	}
 	if strings.TrimSpace(*id) == "" || strings.TrimSpace(*title) == "" || strings.TrimSpace(*body) == "" {
-		writeEnvelope(stdout, errorEnvelope("append", "missing_appendix_input", "usage", "--id, --title, and --body are required", "Use `adrm append --id ADR-0001 --title Note --body Text --dry-run`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("append", "missing_appendix_input", "usage", "--id, --title, and --body are required", "Use `canon append --id ADR-0001 --title Note --body Text --dry-run`."), opts.Format)
 		return exitUsage
 	}
 	store, err := repo.StoreForID(*id)
@@ -686,7 +686,7 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 		return handleReadError(stdout, opts, "append", err)
 	}
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "append_markdown", Path: adr.Path, Description: fmt.Sprintf("Append appendix section %q.", *title)}}}
-	applyCommand := fmt.Sprintf("adrm append --id %s --title %s --body %s", adr.ID, quoteForNextAction(*title), quoteForNextAction(*body))
+	applyCommand := fmt.Sprintf("canon append --id %s --title %s --body %s", adr.ID, quoteForNextAction(*title), quoteForNextAction(*body))
 	if *dryRun {
 		writeEnvelope(stdout, dryRunEnvelope("append", plan, adr.ID, applyCommand), opts.Format)
 		return exitOK
@@ -706,18 +706,18 @@ func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 		writeEnvelope(stdout, Envelope{
 			Command: "skill",
 			Data: map[string]any{
-				"filename": adrmskill.FileName,
-				"content":  adrmskill.Content(),
+				"filename": skill.FileName,
+				"content":  skill.Content(),
 				"skill": map[string]any{
-					"name":                adrmskill.Name,
-					"version":             adrmskill.Version,
-					"hash":                adrmskill.Hash(),
-					"default_install_dir": adrmskill.DefaultInstallDir,
+					"name":                skill.Name,
+					"version":             skill.Version,
+					"hash":                skill.Hash(),
+					"default_install_dir": skill.DefaultInstallDir,
 				},
 			},
 			NextActions: []NextAction{
-				{Command: "adrm skill install --dry-run", Description: "Preview installing the repository-local agent skill.", Safety: "preview"},
-				{Command: "adrm commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
+				{Command: "canon skill install --dry-run", Description: "Preview installing the repository-local agent skill.", Safety: "preview"},
+				{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -728,14 +728,14 @@ func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	case "update":
 		return runSkillUpdate(stdout, stderr, opts, args[1:])
 	default:
-		writeEnvelope(stdout, errorEnvelope("skill", "unknown_skill_subcommand", "usage", fmt.Sprintf("unknown skill subcommand %q", args[0]), "Use `adrm skill`, `adrm skill install`, or `adrm skill update`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("skill", "unknown_skill_subcommand", "usage", fmt.Sprintf("unknown skill subcommand %q", args[0]), "Use `canon skill`, `canon skill install`, or `canon skill update`."), opts.Format)
 		return exitUsage
 	}
 }
 
 func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	fs := newCommandFlagSet(stderr, "skill install")
-	skillDir := fs.String("skill-dir", adrmskill.DefaultInstallDir, "skill installation directory")
+	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill installation directory")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("skill install", err.Error()), opts.Format)
@@ -743,15 +743,15 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 	} else if help {
 		return exitOK
 	}
-	target := adrmskill.TargetPath(*skillDir)
+	target := skill.TargetPath(*skillDir)
 	if _, err := os.Stat(target); err == nil {
-		writeEnvelope(stdout, errorEnvelope("skill install", "skill_already_installed", "state", fmt.Sprintf("%s already exists", target), "Use `adrm skill update --dry-run` to preview updating the installed skill."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("skill install", "skill_already_installed", "state", fmt.Sprintf("%s already exists", target), "Use `canon skill update --dry-run` to preview updating the installed skill."), opts.Format)
 		return exitState
 	} else if !os.IsNotExist(err) {
 		writeEnvelope(stdout, errorEnvelope("skill install", "skill_stat_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
 		return exitIO
 	}
-	plan := skillWritePlan(*dryRun, target, "Install ADRM agent skill.")
+	plan := skillWritePlan(*dryRun, target, "Install CANON agent skill.")
 	if *dryRun {
 		writeEnvelope(stdout, skillDryRunEnvelope("skill install", plan, target, skillInstallApplyCommand(*skillDir)), opts.Format)
 		return exitOK
@@ -760,7 +760,7 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 		writeEnvelope(stdout, errorEnvelope("skill install", "skill_directory_create_failed", "io", err.Error(), "Check directory permissions or choose another --skill-dir."), opts.Format)
 		return exitIO
 	}
-	if err := os.WriteFile(target, []byte(adrmskill.Content()), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(skill.Content()), 0o644); err != nil {
 		writeEnvelope(stdout, errorEnvelope("skill install", "skill_write_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
 		return exitIO
 	}
@@ -772,8 +772,8 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 			"skill": skillMetadata(target),
 		},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm skill update --skill-dir %s --dry-run", quoteForNextAction(*skillDir)), Description: "Preview updating the installed skill later.", Safety: "preview"},
-			{Command: "adrm commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon skill update --skill-dir %s --dry-run", quoteForNextAction(*skillDir)), Description: "Preview updating the installed skill later.", Safety: "preview"},
+			{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -781,7 +781,7 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 
 func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	fs := newCommandFlagSet(stderr, "skill update")
-	skillDir := fs.String("skill-dir", adrmskill.DefaultInstallDir, "skill installation directory")
+	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill installation directory")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	force := fs.Bool("force", false, "overwrite locally modified skill file")
 	if help, err := parseFlags(fs, args); err != nil {
@@ -790,17 +790,17 @@ func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string)
 	} else if help {
 		return exitOK
 	}
-	target := adrmskill.TargetPath(*skillDir)
+	target := skill.TargetPath(*skillDir)
 	content, err := os.ReadFile(target)
 	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope("skill update", "skill_not_installed", "state", fmt.Sprintf("%s does not exist", target), "Use `adrm skill install --dry-run` to preview installing it."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("skill update", "skill_not_installed", "state", fmt.Sprintf("%s does not exist", target), "Use `canon skill install --dry-run` to preview installing it."), opts.Format)
 		return exitNotFound
 	}
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope("skill update", "skill_read_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
 		return exitIO
 	}
-	inspection := adrmskill.Inspect(string(content))
+	inspection := skill.Inspect(string(content))
 	if inspection.Current {
 		writeEnvelope(stdout, Envelope{
 			Command: "skill update",
@@ -808,20 +808,20 @@ func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string)
 				"plan":  skillNoopPlan(target),
 				"skill": skillMetadata(target),
 			},
-			NextActions: []NextAction{{Command: "adrm commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
+			NextActions: []NextAction{{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
 		}, opts.Format)
 		return exitOK
 	}
 	if !inspection.Managed && !*force {
-		writeEnvelope(stdout, errorEnvelope("skill update", "local_skill_modified", "state", fmt.Sprintf("%s is not an unmodified ADRM-managed skill file", target), "Review the file, then retry with `adrm skill update --force --dry-run` if overwriting is acceptable."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("skill update", "local_skill_modified", "state", fmt.Sprintf("%s is not an unmodified CANON-managed skill file", target), "Review the file, then retry with `canon skill update --force --dry-run` if overwriting is acceptable."), opts.Format)
 		return exitState
 	}
-	plan := skillWritePlan(*dryRun, target, "Update ADRM agent skill.")
+	plan := skillWritePlan(*dryRun, target, "Update CANON agent skill.")
 	if *dryRun {
 		writeEnvelope(stdout, skillDryRunEnvelope("skill update", plan, target, forceAwareApplyCommand(*skillDir, *force)), opts.Format)
 		return exitOK
 	}
-	if err := os.WriteFile(target, []byte(adrmskill.Content()), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(skill.Content()), 0o644); err != nil {
 		writeEnvelope(stdout, errorEnvelope("skill update", "skill_write_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
 		return exitIO
 	}
@@ -832,7 +832,7 @@ func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string)
 			"plan":  plan,
 			"skill": skillMetadata(target),
 		},
-		NextActions: []NextAction{{Command: "adrm commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
+		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
@@ -854,7 +854,7 @@ func skillNoopPlan(target string) Plan {
 	return Plan{
 		DryRun:      false,
 		ChangesMade: false,
-		Operations:  []OpPlan{{Action: "noop", Path: target, Description: "Installed ADRM agent skill is current."}},
+		Operations:  []OpPlan{{Action: "noop", Path: target, Description: "Installed CANON agent skill is current."}},
 	}
 }
 
@@ -872,25 +872,25 @@ func skillDryRunEnvelope(command string, plan Plan, target, applyCommand string)
 
 func skillMetadata(target string) map[string]any {
 	return map[string]any{
-		"name":     adrmskill.Name,
-		"version":  adrmskill.Version,
-		"hash":     adrmskill.Hash(),
-		"filename": adrmskill.FileName,
+		"name":     skill.Name,
+		"version":  skill.Version,
+		"hash":     skill.Hash(),
+		"filename": skill.FileName,
 		"path":     target,
 	}
 }
 
 func skillInstallApplyCommand(skillDir string) string {
-	command := "adrm skill install"
-	if strings.TrimSpace(skillDir) != "" && skillDir != adrmskill.DefaultInstallDir {
+	command := "canon skill install"
+	if strings.TrimSpace(skillDir) != "" && skillDir != skill.DefaultInstallDir {
 		command += " --skill-dir " + quoteForNextAction(skillDir)
 	}
 	return command
 }
 
 func forceAwareApplyCommand(skillDir string, force bool) string {
-	command := "adrm skill update"
-	if strings.TrimSpace(skillDir) != "" && skillDir != adrmskill.DefaultInstallDir {
+	command := "canon skill update"
+	if strings.TrimSpace(skillDir) != "" && skillDir != skill.DefaultInstallDir {
 		command += " --skill-dir " + quoteForNextAction(skillDir)
 	}
 	if force {
@@ -917,15 +917,15 @@ func parseFlags(fs *flag.FlagSet, args []string) (help bool, err error) {
 }
 
 func usageError(command, message string) Envelope {
-	return errorEnvelope(command, "invalid_usage", "usage", message, "Run `adrm commands` to inspect required flags and examples.")
+	return errorEnvelope(command, "invalid_usage", "usage", message, "Run `canon commands` to inspect required flags and examples.")
 }
 
 func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err error) int {
 	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `adrm doctor`; if the directory is missing, run `adrm init`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon init`."), opts.Format)
 		return exitNotFound
 	}
-	writeEnvelope(stdout, errorEnvelope(command, "adr_read_failed", "io", err.Error(), "Run `adrm doctor` for diagnostics."), opts.Format)
+	writeEnvelope(stdout, errorEnvelope(command, "adr_read_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
 	return exitIO
 }
 
@@ -1076,7 +1076,7 @@ func dryRunEnvelope(command string, plan Plan, id, applyCommand string) Envelope
 		Warnings: []string{"No changes were made."},
 		NextActions: []NextAction{
 			{Command: applyCommand, Description: "Apply this previewed mutation.", Safety: "write"},
-			{Command: fmt.Sprintf("adrm show --id %s", id), Description: "Inspect current document before mutating it.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon show --id %s", id), Description: "Inspect current document before mutating it.", Safety: "read-only"},
 		},
 	}
 }
@@ -1086,7 +1086,7 @@ func mutationEnvelope(command string, plan Plan, adr ADR) Envelope {
 		Command: command,
 		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("adrm show --id %s", adr.ID), Description: "Inspect the updated document.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon show --id %s", adr.ID), Description: "Inspect the updated document.", Safety: "read-only"},
 		},
 	}
 }

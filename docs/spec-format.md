@@ -1,6 +1,6 @@
 # SPEC File Format
 
-`adrm` stores SPECs as markdown files that share the ADR front-matter shape. A
+`canon` stores SPECs as markdown files that share the ADR front-matter shape. A
 SPEC captures functional requirements; an ADR captures architecture decisions.
 The `kind` front-matter field (`spec`) distinguishes the two.
 
@@ -19,7 +19,7 @@ Default filename pattern:
 Override the directory with the global flag:
 
 ```sh
-adrm --spec-dir docs/spec new --kind spec --title "Local query index"
+canon --spec-dir docs/spec new --kind spec --title "Local query index"
 ```
 
 ## Front matter
@@ -68,7 +68,7 @@ No external dependencies; the index must be rebuildable from markdown.
 
 ## Acceptance Criteria
 
-`adrm list --tag storage` returns ADR-0001 in deterministic order.
+`canon list --tag storage` returns ADR-0001 in deterministic order.
 ```
 
 The front matter is the source of truth for parsing. The Status section is a

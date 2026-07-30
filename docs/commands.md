@@ -1,9 +1,9 @@
 # Command Reference
 
-`adrm` emits JSON by default. Global flags must appear before the command.
+`canon` emits JSON by default. Global flags must appear before the command.
 
 ```sh
-adrm --adr-dir docs/adr --spec-dir docs/spec --format json list
+canon --adr-dir docs/adr --spec-dir docs/spec --format json list
 ```
 
 ## Output envelope
@@ -12,7 +12,7 @@ Every JSON response uses this shape:
 
 ```json
 {
-  "schema_version": "adrm.v1",
+  "schema_version": "canon.v1",
   "command": "list",
   "status": "ok",
   "data": {},
@@ -44,7 +44,7 @@ Fields:
 Returns the machine-readable command registry.
 
 ```sh
-adrm commands
+canon commands
 ```
 
 Use this before automation. It declares purpose, side effects, selectors, examples,
@@ -57,7 +57,7 @@ Safety: read-only.
 Checks whether ADR and SPEC storage exists and whether files can be parsed.
 
 ```sh
-adrm doctor
+canon doctor
 ```
 
 Safety: read-only. Reports a warning when either directory is missing.
@@ -65,10 +65,10 @@ Safety: read-only. Reports a warning when either directory is missing.
 Common next action when missing storage:
 
 ```sh
-adrm init --kind adr --dry-run
-adrm init --kind adr
-adrm init --kind spec --dry-run
-adrm init --kind spec
+canon init --kind adr --dry-run
+canon init --kind adr
+canon init --kind spec --dry-run
+canon init --kind spec
 ```
 
 ## `init`
@@ -76,10 +76,10 @@ adrm init --kind spec
 Creates the ADR or SPEC directory if it does not exist.
 
 ```sh
-adrm init --kind adr --dry-run
-adrm init --kind adr
-adrm init --kind spec --dry-run
-adrm init --kind spec
+canon init --kind adr --dry-run
+canon init --kind adr
+canon init --kind spec --dry-run
+canon init --kind spec
 ```
 
 Flags:
@@ -97,15 +97,15 @@ requirements; ADR files capture architecture decisions.
 Create an ADR:
 
 ```sh
-adrm new --kind adr --title "Use SQLite for local index" --status proposed --dry-run
-adrm new --kind adr --title "Use SQLite for local index" --status proposed --tags "storage,query" --context "Agents need local lookup." --decision "Use SQLite." --consequences "The index can be rebuilt."
+canon new --kind adr --title "Use SQLite for local index" --status proposed --dry-run
+canon new --kind adr --title "Use SQLite for local index" --status proposed --tags "storage,query" --context "Agents need local lookup." --decision "Use SQLite." --consequences "The index can be rebuilt."
 ```
 
 Create a SPEC:
 
 ```sh
-adrm new --kind spec --title "Local query index" --status proposed --dry-run
-adrm new --kind spec --title "Local query index" --tags "storage,query" --context "Agents need local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
+canon new --kind spec --title "Local query index" --status proposed --dry-run
+canon new --kind spec --title "Local query index" --tags "storage,query" --context "Agents need local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
 ```
 
 Flags:
@@ -131,10 +131,10 @@ Safety: mutating. Supports `--dry-run`.
 Lists ADR and SPEC summaries in stable order.
 
 ```sh
-adrm list
-adrm list --kind adr --status accepted
-adrm list --kind spec --tag storage
-adrm list --kind spec
+canon list
+canon list --kind adr --status accepted
+canon list --kind spec --tag storage
+canon list --kind spec
 ```
 
 Flags:
@@ -151,9 +151,9 @@ Returns one ADR or SPEC with metadata and markdown content. The id prefix
 (`ADR-` or `SPEC-`) selects the document; bare numbers resolve to ADR.
 
 ```sh
-adrm show --id ADR-0001
-adrm show --id SPEC-0001
-adrm show --id 1
+canon show --id ADR-0001
+canon show --id SPEC-0001
+canon show --id 1
 ```
 
 Safety: read-only.
@@ -164,11 +164,11 @@ Searches id, title, status, tags, kind, and markdown content across ADRs and
 SPECs.
 
 ```sh
-adrm search --query "database"
-adrm search database
-adrm search --kind spec --query requirements
-adrm search --status deprecated
-adrm search --tag storage --query local
+canon search --query "database"
+canon search database
+canon search --kind spec --query requirements
+canon search --status deprecated
+canon search --tag storage --query local
 ```
 
 Flags:
@@ -185,9 +185,9 @@ Safety: read-only.
 Marks an ADR or SPEC as accepted.
 
 ```sh
-adrm accept --id ADR-0001 --reason "Approved by the team." --dry-run
-adrm accept --id ADR-0001 --reason "Approved by the team."
-adrm accept --id SPEC-0001 --reason "Requirements approved." --dry-run
+canon accept --id ADR-0001 --reason "Approved by the team." --dry-run
+canon accept --id ADR-0001 --reason "Approved by the team."
+canon accept --id SPEC-0001 --reason "Requirements approved." --dry-run
 ```
 
 Flags:
@@ -209,8 +209,8 @@ Safety: mutating. Supports `--dry-run`.
 Marks an ADR or SPEC as rejected.
 
 ```sh
-adrm reject --id ADR-0001 --reason "Chose a different approach." --dry-run
-adrm reject --id ADR-0001 --reason "Chose a different approach."
+canon reject --id ADR-0001 --reason "Chose a different approach." --dry-run
+canon reject --id ADR-0001 --reason "Chose a different approach."
 ```
 
 Flags:
@@ -233,9 +233,9 @@ Marks one document as superseded by another existing document of the same
 kind. Cross-kind supersede (an ADR by a SPEC, or vice versa) is rejected.
 
 ```sh
-adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design." --dry-run
-adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design."
-adrm supersede --id SPEC-0001 --by SPEC-0002 --reason "Requirements split." --dry-run
+canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design." --dry-run
+canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design."
+canon supersede --id SPEC-0001 --by SPEC-0002 --reason "Requirements split." --dry-run
 ```
 
 Effects:
@@ -258,9 +258,9 @@ Errors:
 Marks an ADR or SPEC as deprecated without naming a replacement.
 
 ```sh
-adrm deprecate --id ADR-0003 --reason "The component was removed." --dry-run
-adrm deprecate --id ADR-0003 --reason "The component was removed."
-adrm deprecate --id SPEC-0002 --reason "Requirements moved." --dry-run
+canon deprecate --id ADR-0003 --reason "The component was removed." --dry-run
+canon deprecate --id ADR-0003 --reason "The component was removed."
+canon deprecate --id SPEC-0002 --reason "Requirements moved." --dry-run
 ```
 
 Effects:
@@ -277,19 +277,19 @@ Safety: mutating. Supports `--dry-run`.
 Appends a dated appendix section to an ADR or SPEC.
 
 ```sh
-adrm append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index." --dry-run
-adrm append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index."
-adrm append --id SPEC-0001 --title "Review" --body "Requirements still apply." --dry-run
+canon append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index." --dry-run
+canon append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index."
+canon append --id SPEC-0001 --title "Review" --body "Requirements still apply." --dry-run
 ```
 
 Safety: mutating. Supports `--dry-run`.
 
 ## `skill`
 
-Prints the bundled agent skill for operating `adrm`.
+Prints the bundled agent skill for operating `canon`.
 
 ```sh
-adrm skill
+canon skill
 ```
 
 The returned `data.content` is the generated `SKILL.md` content. The response
@@ -300,17 +300,17 @@ Safety: read-only.
 
 ## `skill install`
 
-Installs the ADRM agent skill into a repository-local skill directory.
+Installs the CANON agent skill into a repository-local skill directory.
 
 ```sh
-adrm skill install --dry-run
-adrm skill install
-adrm skill install --skill-dir .agents/skills/adrm --dry-run
+canon skill install --dry-run
+canon skill install
+canon skill install --skill-dir .agents/skills/canon --dry-run
 ```
 
 Flags:
 
-- `--skill-dir`: installation directory. Default: `.agents/skills/adrm`.
+- `--skill-dir`: installation directory. Default: `.agents/skills/canon`.
 - `--dry-run`: preview without writing.
 
 Effects:
@@ -318,37 +318,37 @@ Effects:
 - Creates the skill directory if missing.
 - Writes `SKILL.md` with managed version and content-hash metadata.
 
-The default target path is `.agents/skills/adrm/SKILL.md`.
+The default target path is `.agents/skills/canon/SKILL.md`.
 
 Safety: mutating. Supports `--dry-run`.
 
 Errors:
 
 - `skill_already_installed`: target `SKILL.md` already exists. Use
-  `adrm skill update --dry-run`.
+  `canon skill update --dry-run`.
 - `skill_directory_create_failed`: the skill directory could not be created.
 - `skill_write_failed`: `SKILL.md` could not be written.
 
 ## `skill update`
 
-Updates an installed ADRM agent skill.
+Updates an installed CANON agent skill.
 
 ```sh
-adrm skill update --dry-run
-adrm skill update
-adrm skill update --force --dry-run
+canon skill update --dry-run
+canon skill update
+canon skill update --force --dry-run
 ```
 
 Flags:
 
-- `--skill-dir`: installation directory. Default: `.agents/skills/adrm`.
+- `--skill-dir`: installation directory. Default: `.agents/skills/canon`.
 - `--force`: overwrite a locally modified or unmanaged `SKILL.md`.
 - `--dry-run`: preview without writing.
 
 Behavior:
 
 - Returns a no-op plan when the installed skill is already current.
-- Updates unmodified ADRM-managed skill files.
+- Updates unmodified CANON-managed skill files.
 - Refuses to overwrite local edits unless `--force` is passed.
 
 Safety: mutating. Supports `--dry-run`.
@@ -356,7 +356,7 @@ Safety: mutating. Supports `--dry-run`.
 Errors:
 
 - `skill_not_installed`: target `SKILL.md` does not exist. Use
-  `adrm skill install --dry-run`.
-- `local_skill_modified`: target file is not an unmodified ADRM-managed skill.
+  `canon skill install --dry-run`.
+- `local_skill_modified`: target file is not an unmodified CANON-managed skill.
 - `skill_read_failed`: target file could not be read.
 - `skill_write_failed`: target file could not be written.

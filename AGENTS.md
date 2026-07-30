@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository contains `adrm`, a Go CLI for managing Architecture Decision
+This repository contains `canon`, a Go CLI for managing Architecture Decision
 Records (ADRs) and Specs (SPECs) in agent-led workflows.
 
 ## Start Here
@@ -9,25 +9,25 @@ Run these commands before making non-trivial changes:
 
 ```sh
 go test ./...
-go run ./cmd/adrm commands
-go run ./cmd/adrm doctor
+go run ./cmd/canon commands
+go run ./cmd/canon doctor
 ```
 
-Use `go run ./cmd/adrm ...` during development. The installed binary may not
+Use `go run ./cmd/canon ...` during development. The installed binary may not
 exist or may be stale.
 
 Global flags (`--adr-dir`, `--spec-dir`, `--format`) must come **before** the
-subcommand: `adrm --adr-dir x list`, not `adrm list --adr-dir x`.
+subcommand: `canon --adr-dir x list`, not `canon list --adr-dir x`.
 
 ## Project Shape
 
-- `cmd/adrm`: CLI entrypoint.
-- `internal/adrm`: command handling (`cli.go`), storage (`store.go`), output
+- `cmd/canon`: CLI entrypoint.
+- `internal/canon`: command handling (`cli.go`), storage (`store.go`), output
   envelopes, command registry, and tests.
-- `adrmskill`: bundled agent skill content embedded in Go source
+- `skill`: bundled agent skill content embedded in Go source
   (`skill.go`), with version/hash metadata and install/update helpers.
 - `scripts`: build and install helpers (e.g. `scripts/install.sh`).
-- `docs/adr`: project ADRs managed by `adrm`.
+- `docs/adr`: project ADRs managed by `canon`.
 - `docs/commands.md`, `docs/adr-format.md`, `docs/spec-format.md`: format and
   command references.
 - `docs/agent-workflows.md`: expected agent workflow.
@@ -55,17 +55,17 @@ unless the CLI cannot express the change.
 Before any mutation, check storage and gather context:
 
 ```sh
-go run ./cmd/adrm doctor
-go run ./cmd/adrm list
-go run ./cmd/adrm search --query "relevant topic"
-go run ./cmd/adrm show --id ADR-0001
+go run ./cmd/canon doctor
+go run ./cmd/canon list
+go run ./cmd/canon search --query "relevant topic"
+go run ./cmd/canon show --id ADR-0001
 ```
 
 Always preview mutations first; every mutating command supports `--dry-run`
 and the dry-run response includes the warning `No changes were made.`:
 
 ```sh
-go run ./cmd/adrm accept --id ADR-0001 --reason "Approved." --dry-run
+go run ./cmd/canon accept --id ADR-0001 --reason "Approved." --dry-run
 ```
 
 Apply only after the dry-run plan is correct, then verify with `show`.
@@ -93,22 +93,22 @@ Keep the CLI agent-friendly:
 
 When adding a command, update:
 
-- `internal/adrm/registry.go`
+- `internal/canon/registry.go`
 - `docs/commands.md`
 - `docs/agent-workflows.md` if workflows change
-- tests in `internal/adrm`
+- tests in `internal/canon`
 
 ## Agent Skill
 
-The bundled skill content is embedded in `adrmskill/skill.go`
+The bundled skill content is embedded in `skill/skill.go`
 (`managedPayload`), not in a separate markdown file. When changing the skill,
 edit that function and bump the `Version` const; the content hash is computed
 automatically. Install/update it via:
 
 ```sh
-go run ./cmd/adrm skill install --dry-run
-go run ./cmd/adrm skill install
-go run ./cmd/adrm skill update --dry-run
+go run ./cmd/canon skill install --dry-run
+go run ./cmd/canon skill install
+go run ./cmd/canon skill update --dry-run
 ```
 
 ## Testing
@@ -120,13 +120,13 @@ go test ./...
 ```
 
 Tests exercise `Run` directly and parse the JSON envelope
-(`internal/adrm/cli_test.go` has `runForTest`).
+(`internal/canon/cli_test.go` has `runForTest`).
 
 For CLI smoke checks, prefer dry-run commands against a temp directory so
 nothing is left behind:
 
 ```sh
-go run ./cmd/adrm --adr-dir /private/tmp/adrm-smoke new --title "Smoke test" --dry-run
+go run ./cmd/canon --adr-dir /private/tmp/canon-smoke new --title "Smoke test" --dry-run
 ```
 
 For a more complete install check:
@@ -139,8 +139,8 @@ If you build a binary directly for verification, remove the artifact before
 finishing:
 
 ```sh
-go build ./cmd/adrm
-rm adrm
+go build ./cmd/canon
+rm canon
 ```
 
 ## Documentation
