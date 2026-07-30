@@ -41,10 +41,10 @@ scripts/install.sh --uninstall
 ```sh
 canon commands
 canon doctor
-canon init --dry-run
-canon init
-canon new --title "Use CANON for decisions" --status proposed --dry-run
-canon new --title "Use CANON for decisions" --status proposed
+canon adr init --dry-run
+canon adr init
+canon adr new --title "Use CANON for decisions" --status proposed --dry-run
+canon adr new --title "Use CANON for decisions" --status proposed
 canon list
 canon show --id ADR-0001
 canon skill install --dry-run

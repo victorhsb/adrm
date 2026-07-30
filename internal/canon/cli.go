@@ -116,21 +116,24 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	commandArgs := remaining[1:]
 	repo := NewRepo(opts)
 
+	if command == KindADR || command == KindSPEC {
+		return runKindCommand(command, stdout, stderr, opts, repo, commandArgs)
+	}
+
 	switch command {
 	case "commands":
 		return runCommands(stdout, opts)
 	case "doctor":
 		return runDoctor(stdout, opts, repo)
-	case "init":
-		return runInit(stdout, stderr, opts, repo, commandArgs)
-	case "new":
-		return runNew(stdout, stderr, opts, repo, commandArgs)
+	case "init", "new":
+		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s` or `canon spec %s`.", command, command)), opts.Format)
+		return exitUsage
 	case "list":
-		return runList(stdout, stderr, opts, repo, commandArgs)
+		return runList(stdout, stderr, opts, repo, commandArgs, "")
 	case "show":
 		return runShow(stdout, stderr, opts, repo, commandArgs)
 	case "search":
-		return runSearch(stdout, stderr, opts, repo, commandArgs)
+		return runSearch(stdout, stderr, opts, repo, commandArgs, "")
 	case "accept":
 		return runLifecycle(stdout, stderr, opts, repo, commandArgs, "accept", "accepted", "Accepted")
 	case "reject":
@@ -145,6 +148,30 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runSkill(stdout, stderr, opts, commandArgs)
 	default:
 		writeEnvelope(stdout, errorEnvelope(command, "unknown_command", "usage", fmt.Sprintf("unknown command %q", command), "Run `canon commands` to inspect valid commands."), opts.Format)
+		return exitUsage
+	}
+}
+
+// runKindCommand dispatches kind-prefixed commands such as `canon adr new`
+// and `canon spec list`. Only commands that create or scope documents by kind
+// live under the prefix; document commands route by --id prefix instead.
+func runKindCommand(kind string, stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
+	suggested := fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, or `canon %s init`.", kind, kind, kind, kind)
+	if len(args) == 0 {
+		writeEnvelope(stdout, errorEnvelope(kind, "missing_kind_subcommand", "usage", fmt.Sprintf("%q requires a subcommand", kind), suggested), opts.Format)
+		return exitUsage
+	}
+	switch args[0] {
+	case "new":
+		return runNew(stdout, stderr, opts, repo, args[1:], kind)
+	case "list":
+		return runList(stdout, stderr, opts, repo, args[1:], kind)
+	case "search":
+		return runSearch(stdout, stderr, opts, repo, args[1:], kind)
+	case "init":
+		return runInit(stdout, stderr, opts, repo, args[1:], kind)
+	default:
+		writeEnvelope(stdout, errorEnvelope(kind, "unknown_command", "usage", fmt.Sprintf("unknown %s subcommand %q", kind, args[0]), suggested+" Other commands route by --id without a kind prefix."), opts.Format)
 		return exitUsage
 	}
 }
@@ -171,7 +198,7 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 	for _, store := range []Store{repo.ADR, repo.Spec} {
 		label := store.Kind
 		if !store.Exists() {
-			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon init --kind %s --dry-run`, then `canon init --kind %s`.", label, label)})
+			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon %s init --dry-run`, then `canon %s init`.", label, label)})
 			continue
 		}
 		checks = append(checks, Diagnostic{Name: label + "_directory", Status: "ok", Message: fmt.Sprintf("%s exists", store.Dir)})
@@ -191,8 +218,8 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 			Status:  "warning",
 			Data:    map[string]any{"diagnostics": checks},
 			NextActions: []NextAction{
-				{Command: "canon init --kind adr --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
-				{Command: "canon init --kind spec --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
+				{Command: "canon adr init --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
+				{Command: "canon spec init --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -202,60 +229,55 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		Data:    map[string]any{"diagnostics": checks},
 		NextActions: []NextAction{
 			{Command: "canon list", Description: "Inspect ADR and SPEC inventory.", Safety: "read-only"},
-			{Command: `canon new --kind adr --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
-			{Command: `canon new --kind spec --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
+			{Command: `canon adr new --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
+			{Command: `canon spec new --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	fs := newCommandFlagSet(stderr, "init")
-	kind := fs.String("kind", KindADR, "document kind: adr or spec")
+func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
+	command := kind + " init"
+	fs := newCommandFlagSet(stderr, command)
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	if help, err := parseFlags(fs, args); err != nil {
-		writeEnvelope(stdout, usageError("init", err.Error()), opts.Format)
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
 	}
-	kindValue := normalizeKind(*kind)
-	if kindValue == "" {
-		writeEnvelope(stdout, errorEnvelope("init", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec."), opts.Format)
-		return exitUsage
-	}
-	store := repo.StoreForKind(kindValue)
-	plan := Plan{DryRun: *dryRun, ChangesMade: false, Operations: []OpPlan{{Action: "mkdir", Path: store.Dir, Description: fmt.Sprintf("Create %s directory if missing.", kindValue)}}}
+	store := repo.StoreForKind(kind)
+	plan := Plan{DryRun: *dryRun, ChangesMade: false, Operations: []OpPlan{{Action: "mkdir", Path: store.Dir, Description: fmt.Sprintf("Create %s directory if missing.", kind)}}}
 	if *dryRun {
 		writeEnvelope(stdout, Envelope{
-			Command: "init",
+			Command: command,
 			Status:  "planned",
 			Data:    plan,
 			Warnings: []string{
 				"No changes were made.",
 			},
-			NextActions: []NextAction{{Command: fmt.Sprintf("canon init --kind %s", kindValue), Description: "Apply this directory creation plan.", Safety: "write"}},
+			NextActions: []NextAction{{Command: fmt.Sprintf("canon %s init", kind), Description: "Apply this directory creation plan.", Safety: "write"}},
 		}, opts.Format)
 		return exitOK
 	}
 	if err := store.Init(); err != nil {
-		writeEnvelope(stdout, errorEnvelope("init", "init_failed", "io", err.Error(), "Check directory permissions or choose another directory flag."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "init_failed", "io", err.Error(), "Check directory permissions or choose another directory flag."), opts.Format)
 		return exitIO
 	}
 	plan.ChangesMade = true
 	writeEnvelope(stdout, Envelope{
-		Command: "init",
+		Command: command,
 		Data:    plan,
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf(`canon new --kind %s --title "First %s" --dry-run`, kindValue, kindValue), Description: "Preview creating the first document.", Safety: "preview"},
+			{Command: fmt.Sprintf(`canon %s new --title "First %s" --dry-run`, kind, kind), Description: "Preview creating the first document.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
 }
 
-func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	fs := newCommandFlagSet(stderr, "new")
-	kind := fs.String("kind", KindADR, "document kind: adr or spec")
+func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
+	command := kind + " new"
+	fs := newCommandFlagSet(stderr, command)
 	title := fs.String("title", "", "document title")
 	status := fs.String("status", "proposed", "document status")
 	tags := fs.String("tags", "", "comma-separated tags")
@@ -267,61 +289,56 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	acceptance := fs.String("acceptance", "", "acceptance criteria section (spec)")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	if help, err := parseFlags(fs, args); err != nil {
-		writeEnvelope(stdout, usageError("new", err.Error()), opts.Format)
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
 	}
-	kindValue := normalizeKind(*kind)
-	if kindValue == "" {
-		writeEnvelope(stdout, errorEnvelope("new", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec."), opts.Format)
-		return exitUsage
-	}
 	if strings.TrimSpace(*title) == "" {
-		writeEnvelope(stdout, errorEnvelope("new", "missing_title", "usage", "--title is required", `Run canon new --kind `+kindValue+` --title "Short title" --dry-run.`), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "missing_title", "usage", "--title is required", `Run canon `+kind+` new --title "Short title" --dry-run.`), opts.Format)
 		return exitUsage
 	}
 	statusValue := normalizeStatus(*status)
 	if !validStatus(statusValue) {
-		writeEnvelope(stdout, errorEnvelope("new", "invalid_status", "usage", fmt.Sprintf("invalid status %q", *status), "Use proposed, accepted, rejected, superseded, or deprecated."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "invalid_status", "usage", fmt.Sprintf("invalid status %q", *status), "Use proposed, accepted, rejected, superseded, or deprecated."), opts.Format)
 		return exitUsage
 	}
-	store := repo.StoreForKind(kindValue)
+	store := repo.StoreForKind(kind)
 	next, err := store.NextNumber()
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("new", "next_number_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "next_number_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
 		return exitIO
 	}
 	path := filepath.Join(store.Dir, fmt.Sprintf("%04d-%s.md", next, slugify(*title)))
-	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "write_file", Path: path, Description: fmt.Sprintf("Create new %s markdown file.", kindValue)}}}
-	sections := newSections(kindValue, *context, *decision, *consequences, *requirements, *constraints, *acceptance)
+	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "write_file", Path: path, Description: fmt.Sprintf("Create new %s markdown file.", kind)}}}
+	sections := newSections(kind, *context, *decision, *consequences, *requirements, *constraints, *acceptance)
 	if *dryRun {
 		writeEnvelope(stdout, Envelope{
-			Command: "new",
+			Command: command,
 			Status:  "planned",
 			Data: map[string]any{
 				"plan": plan,
-				"adr":  ADR{Kind: kindValue, ID: formatID(kindValue, next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
+				"adr":  ADR{Kind: kind, ID: formatID(kind, next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
-				{Command: strings.Join(append([]string{"canon new", "--kind", kindValue, "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kindValue, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
+				{Command: strings.Join(append([]string{"canon", kind, "new", "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kind, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
 			},
 		}, opts.Format)
 		return exitOK
 	}
 	adr, err := store.WriteNew(strings.TrimSpace(*title), statusValue, parseList(*tags), sections)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("new", "create_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "create_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
 		return exitIO
 	}
 	plan.ChangesMade = true
 	writeEnvelope(stdout, Envelope{
-		Command: "new",
+		Command: command,
 		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
 		NextActions: []NextAction{
 			{Command: fmt.Sprintf("canon show --id %s", adr.ID), Description: "Inspect the created document.", Safety: "read-only"},
-			{Command: fmt.Sprintf("canon list --kind %s", kindValue), Description: "Refresh document inventory.", Safety: "read-only"},
+			{Command: fmt.Sprintf("canon %s list", kind), Description: "Refresh document inventory.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -371,29 +388,29 @@ func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements
 	return args
 }
 
-func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	fs := newCommandFlagSet(stderr, "list")
-	kind := fs.String("kind", "", "filter by kind: adr, spec, or empty for all")
+// runList lists document summaries. An empty kind lists both ADRs and SPECs;
+// a kind from `canon adr list` or `canon spec list` scopes the listing.
+func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
+	command := "list"
+	if kind != "" {
+		command = kind + " list"
+	}
+	fs := newCommandFlagSet(stderr, command)
 	status := fs.String("status", "", "filter by status")
 	tag := fs.String("tag", "", "filter by tag")
 	if help, err := parseFlags(fs, args); err != nil {
-		writeEnvelope(stdout, usageError("list", err.Error()), opts.Format)
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
 	}
-	kindValue := normalizeKind(*kind)
-	if *kind != "" && kindValue == "" {
-		writeEnvelope(stdout, errorEnvelope("list", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec, or omit it to list all."), opts.Format)
-		return exitUsage
-	}
-	docs, err := docsForKind(repo, kindValue)
+	docs, err := docsForKind(repo, kind)
 	if err != nil {
-		return handleReadError(stdout, opts, "list", err)
+		return handleReadError(stdout, opts, command, err)
 	}
 	docs = filterADRs(docs, *status, *tag, "")
 	writeEnvelope(stdout, Envelope{
-		Command: "list",
+		Command: command,
 		Data: map[string]any{
 			"count": len(docs),
 			"adrs":  summaries(docs),
@@ -438,14 +455,19 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	return exitOK
 }
 
-func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	fs := newCommandFlagSet(stderr, "search")
+// runSearch searches documents. An empty kind searches both ADRs and SPECs;
+// a kind from `canon adr search` or `canon spec search` scopes the search.
+func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
+	command := "search"
+	if kind != "" {
+		command = kind + " search"
+	}
+	fs := newCommandFlagSet(stderr, command)
 	query := fs.String("query", "", "search query")
-	kind := fs.String("kind", "", "filter by kind: adr, spec, or empty for all")
 	status := fs.String("status", "", "filter by status")
 	tag := fs.String("tag", "", "filter by tag")
 	if help, err := parseFlags(fs, args); err != nil {
-		writeEnvelope(stdout, usageError("search", err.Error()), opts.Format)
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
@@ -453,18 +475,13 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	if fs.NArg() > 0 && strings.TrimSpace(*query) == "" {
 		*query = strings.Join(fs.Args(), " ")
 	}
-	kindValue := normalizeKind(*kind)
-	if *kind != "" && kindValue == "" {
-		writeEnvelope(stdout, errorEnvelope("search", "invalid_kind", "usage", fmt.Sprintf("invalid kind %q", *kind), "Use --kind adr or --kind spec, or omit it to search all."), opts.Format)
-		return exitUsage
-	}
-	docs, err := docsForKind(repo, kindValue)
+	docs, err := docsForKind(repo, kind)
 	if err != nil {
-		return handleReadError(stdout, opts, "search", err)
+		return handleReadError(stdout, opts, command, err)
 	}
 	results := filterADRs(docs, *status, *tag, *query)
 	writeEnvelope(stdout, Envelope{
-		Command: "search",
+		Command: command,
 		Data: map[string]any{
 			"query":   *query,
 			"count":   len(results),
@@ -922,7 +939,7 @@ func usageError(command, message string) Envelope {
 
 func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err error) int {
 	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon init`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon adr init` or `canon spec init`."), opts.Format)
 		return exitNotFound
 	}
 	writeEnvelope(stdout, errorEnvelope(command, "adr_read_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)

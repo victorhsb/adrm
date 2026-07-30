@@ -6,6 +6,11 @@
 canon --adr-dir docs/adr --spec-dir docs/spec --format json list
 ```
 
+Commands that create or scope documents by kind are prefixed with the kind:
+`canon adr new`, `canon spec list`, and so on. Commands that operate on one
+document take `--id` and route by the id prefix (`ADR-` or `SPEC-`), so they
+need no kind prefix.
+
 ## Output envelope
 
 Every JSON response uses this shape:
@@ -65,81 +70,88 @@ Safety: read-only. Reports a warning when either directory is missing.
 Common next action when missing storage:
 
 ```sh
-canon init --kind adr --dry-run
-canon init --kind adr
-canon init --kind spec --dry-run
-canon init --kind spec
+canon adr init --dry-run
+canon adr init
+canon spec init --dry-run
+canon spec init
 ```
 
-## `init`
+## `adr init` / `spec init`
 
 Creates the ADR or SPEC directory if it does not exist.
 
 ```sh
-canon init --kind adr --dry-run
-canon init --kind adr
-canon init --kind spec --dry-run
-canon init --kind spec
+canon adr init --dry-run
+canon adr init
+canon spec init --dry-run
+canon spec init
 ```
 
 Flags:
 
-- `--kind`: document kind. Values: `adr`, `spec`. Default: `adr`.
 - `--dry-run`: preview without writing.
 
 Safety: mutating. Supports `--dry-run`.
 
-## `new`
+## `adr new`
 
-Creates a new ADR or SPEC markdown file. SPEC files capture functional
-requirements; ADR files capture architecture decisions.
-
-Create an ADR:
+Creates a new ADR markdown file. ADR files capture architecture decisions.
 
 ```sh
-canon new --kind adr --title "Use SQLite for local index" --status proposed --dry-run
-canon new --kind adr --title "Use SQLite for local index" --status proposed --tags "storage,query" --context "Agents need local lookup." --decision "Use SQLite." --consequences "The index can be rebuilt."
-```
-
-Create a SPEC:
-
-```sh
-canon new --kind spec --title "Local query index" --status proposed --dry-run
-canon new --kind spec --title "Local query index" --tags "storage,query" --context "Agents need local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
+canon adr new --title "Use SQLite for local index" --status proposed --dry-run
+canon adr new --title "Use SQLite for local index" --status proposed --tags "storage,query" --context "Agents need local lookup." --decision "Use SQLite." --consequences "The index can be rebuilt."
 ```
 
 Flags:
 
-- `--kind`: document kind. Values: `adr`, `spec`. Default: `adr`.
 - `--title`: required.
 - `--status`: optional. Default: `proposed`.
 - `--tags`: comma-separated list.
-- `--context`: markdown text for the Context section (both kinds).
-- `--decision`: markdown text for the Decision section (adr).
-- `--consequences`: markdown text for the Consequences section (adr).
-- `--requirements`: markdown text for the Requirements section (spec).
-- `--constraints`: markdown text for the Constraints section (spec).
-- `--acceptance`: markdown text for the Acceptance Criteria section (spec).
+- `--context`: markdown text for the Context section.
+- `--decision`: markdown text for the Decision section.
+- `--consequences`: markdown text for the Consequences section.
 - `--dry-run`: preview without writing.
 
 Valid statuses: `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`.
 
 Safety: mutating. Supports `--dry-run`.
 
-## `list`
+## `spec new`
 
-Lists ADR and SPEC summaries in stable order.
+Creates a new SPEC markdown file. SPEC files capture functional requirements.
 
 ```sh
-canon list
-canon list --kind adr --status accepted
-canon list --kind spec --tag storage
-canon list --kind spec
+canon spec new --title "Local query index" --status proposed --dry-run
+canon spec new --title "Local query index" --tags "storage,query" --context "Agents need local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
 ```
 
 Flags:
 
-- `--kind`: filter by kind. Values: `adr`, `spec`, or empty to list both.
+- `--title`: required.
+- `--status`: optional. Default: `proposed`.
+- `--tags`: comma-separated list.
+- `--context`: markdown text for the Context section.
+- `--requirements`: markdown text for the Requirements section.
+- `--constraints`: markdown text for the Constraints section.
+- `--acceptance`: markdown text for the Acceptance Criteria section.
+- `--dry-run`: preview without writing.
+
+Safety: mutating. Supports `--dry-run`.
+
+## `list` / `adr list` / `spec list`
+
+Lists ADR and SPEC summaries in stable order. Plain `canon list` covers both
+kinds; the prefixed forms scope the listing to one kind.
+
+```sh
+canon list
+canon list --status accepted
+canon adr list --status accepted
+canon spec list --tag storage
+```
+
+Flags:
+
 - `--status`: filter by status.
 - `--tag`: filter by tag.
 
@@ -158,23 +170,23 @@ canon show --id 1
 
 Safety: read-only.
 
-## `search`
+## `search` / `adr search` / `spec search`
 
 Searches id, title, status, tags, kind, and markdown content across ADRs and
-SPECs.
+SPECs. Plain `canon search` covers both kinds; the prefixed forms scope the
+search to one kind.
 
 ```sh
 canon search --query "database"
 canon search database
-canon search --kind spec --query requirements
+canon spec search --query requirements
 canon search --status deprecated
-canon search --tag storage --query local
+canon adr search --tag storage --query local
 ```
 
 Flags:
 
 - `--query`: search query.
-- `--kind`: filter by kind. Values: `adr`, `spec`, or empty to search both.
 - `--status`: filter by status.
 - `--tag`: filter by tag.
 

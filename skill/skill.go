@@ -9,7 +9,7 @@ import (
 
 const (
 	Name              = "canon"
-	Version           = "4"
+	Version           = "5"
 	FileName          = "SKILL.md"
 	DefaultInstallDir = ".agents/skills/canon"
 )
@@ -85,10 +85,10 @@ Use canon to manage Architecture Decision Records without guessing repository st
 ## Operating rules
 
 1. Start with `+"`canon commands`"+` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `+"`canon doctor`"+` before mutating ADRs. If it reports a missing ADR directory, preview initialization with `+"`canon init --dry-run`"+` before applying `+"`canon init`"+`.
+2. Run `+"`canon doctor`"+` before mutating ADRs. If it reports a missing ADR or SPEC directory, preview initialization with `+"`canon adr init --dry-run`"+` or `+"`canon spec init --dry-run`"+` before applying.
 3. Use JSON output unless a human explicitly asks for text. Every JSON response has `+"`schema_version`"+`, `+"`status`"+`, `+"`data`"+`, and optional `+"`error`"+` / `+"`next_actions`"+`.
 4. For every mutating command, run the same command with `+"`--dry-run`"+` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `+"`No changes were made.`"+` in warnings.
-5. Use `+"`canon list`"+`, `+"`canon search --query ...`"+`, and `+"`canon show --id ...`"+` to gather context before changing an ADR.
+5. Use `+"`canon list`"+` (both kinds), `+"`canon adr list`"+` / `+"`canon spec list`"+`, `+"`canon search --query ...`"+`, and `+"`canon show --id ...`"+` to gather context before changing an ADR.
 6. Prefer selectors from CLI output. ADR ids are stable strings like `+"`ADR-0001`"+` and can be passed to `+"`--id`"+` or `+"`--by`"+`.
 
 ## Common commands
@@ -96,7 +96,8 @@ Use canon to manage Architecture Decision Records without guessing repository st
 Preview each of these with `+"`--dry-run`"+` first (rule 4), then apply:
 
 `+"```sh"+`
-canon new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."
+canon adr new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."
+canon spec new --title "Local query index" --requirements "Return ADRs by tag." --acceptance "canon list --tag storage returns ADR-0001."
 canon accept --id ADR-0001 --reason "Approved by the team."
 canon reject --id ADR-0001 --reason "Chose a different approach."
 canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current storage approach."

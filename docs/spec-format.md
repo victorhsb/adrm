@@ -19,7 +19,7 @@ Default filename pattern:
 Override the directory with the global flag:
 
 ```sh
-canon --spec-dir docs/spec new --kind spec --title "Local query index"
+canon --spec-dir docs/spec spec new --title "Local query index"
 ```
 
 ## Front matter

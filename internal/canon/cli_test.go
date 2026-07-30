@@ -41,13 +41,19 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 	if len(commands) == 0 {
 		t.Fatal("expected commands")
 	}
-	var sawNew, sawSkillInstall, sawSkillUpdate bool
+	var sawNew, sawSpecNew, sawSkillInstall, sawSkillUpdate bool
 	for _, raw := range commands {
 		command := raw.(map[string]any)
-		if command["name"] == "new" {
+		if command["name"] == "adr new" {
 			sawNew = true
 			if command["mutating"] != true || command["has_dry_run"] != true {
-				t.Fatalf("new command metadata = %#v", command)
+				t.Fatalf("adr new command metadata = %#v", command)
+			}
+		}
+		if command["name"] == "spec new" {
+			sawSpecNew = true
+			if command["mutating"] != true || command["has_dry_run"] != true {
+				t.Fatalf("spec new command metadata = %#v", command)
 			}
 		}
 		if command["name"] == "skill install" {
@@ -63,8 +69,8 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 			}
 		}
 	}
-	if !sawNew {
-		t.Fatal("missing new command")
+	if !sawNew || !sawSpecNew {
+		t.Fatalf("missing new commands: adr=%v spec=%v", sawNew, sawSpecNew)
 	}
 	if !sawSkillInstall || !sawSkillUpdate {
 		t.Fatalf("missing skill install/update commands: install=%v update=%v", sawSkillInstall, sawSkillUpdate)
@@ -73,7 +79,7 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 
 func TestNewDryRunDoesNotWriteFile(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	code, env := runForTest(t, "--adr-dir", dir, "new", "--title", "Use SQLite", "--dry-run")
+	code, env := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Use SQLite", "--dry-run")
 	if code != exitOK {
 		t.Fatalf("code = %d", code)
 	}
@@ -91,7 +97,7 @@ func TestNewDryRunDoesNotWriteFile(t *testing.T) {
 
 func TestCreateListSearchAndShow(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	code, env := runForTest(t, "--adr-dir", dir, "new", "--title", "Use SQLite", "--tags", "storage, local", "--context", "Need local querying", "--decision", "Use SQLite")
+	code, env := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Use SQLite", "--tags", "storage, local", "--context", "Need local querying", "--decision", "Use SQLite")
 	if code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
@@ -128,7 +134,7 @@ func TestCreateListSearchAndShow(t *testing.T) {
 
 func TestAppendAndDeprecateMutateADR(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Temporary choice"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Temporary choice"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	if code, env := runForTest(t, "--adr-dir", dir, "append", "--id", "ADR-0001", "--title", "Review", "--body", "Still under review.", "--dry-run"); code != exitOK || env["status"] != "planned" {
@@ -156,7 +162,7 @@ func TestAppendAndDeprecateMutateADR(t *testing.T) {
 
 func TestAcceptMutatesADR(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Candidate decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	if code, env := runForTest(t, "--adr-dir", dir, "accept", "--id", "ADR-0001", "--reason", "Approved by the team.", "--dry-run"); code != exitOK || env["status"] != "planned" {
@@ -181,7 +187,7 @@ func TestAcceptMutatesADR(t *testing.T) {
 
 func TestRejectMutatesADR(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Candidate decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	if code, env := runForTest(t, "--adr-dir", dir, "reject", "--id", "ADR-0001", "--reason", "Chose a different approach.", "--dry-run"); code != exitOK || env["status"] != "planned" {
@@ -206,7 +212,7 @@ func TestRejectMutatesADR(t *testing.T) {
 
 func TestAcceptMissingID(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Candidate decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	code, env := runForTest(t, "--adr-dir", dir, "accept")
@@ -221,7 +227,7 @@ func TestAcceptMissingID(t *testing.T) {
 
 func TestRejectMissingID(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Candidate decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Candidate decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	code, env := runForTest(t, "--adr-dir", dir, "reject")
@@ -236,7 +242,7 @@ func TestRejectMissingID(t *testing.T) {
 
 func TestSupersedeRequiresReplacementADR(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Old decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Old decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 	code, env := runForTest(t, "--adr-dir", dir, "supersede", "--id", "ADR-0001", "--by", "ADR-0002", "--dry-run")
@@ -251,10 +257,10 @@ func TestSupersedeRequiresReplacementADR(t *testing.T) {
 
 func TestSupersedeUpdatesBothADRs(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "adr")
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "Old decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Old decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
-	if code, _ := runForTest(t, "--adr-dir", dir, "new", "--title", "New decision"); code != exitOK {
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "New decision"); code != exitOK {
 		t.Fatalf("new code = %d", code)
 	}
 
@@ -525,7 +531,7 @@ func runKindTest(t *testing.T, args ...string) (int, map[string]any) {
 func TestNewSpecDryRunDoesNotWriteFile(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Local query index", "--dry-run")
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "new", "--title", "Local query index", "--dry-run")
 	if code != exitOK {
 		t.Fatalf("code = %d", code)
 	}
@@ -545,7 +551,7 @@ func TestNewSpecDryRunDoesNotWriteFile(t *testing.T) {
 func TestCreateListSearchAndShowSpec(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Local query index", "--tags", "storage, query", "--context", "Agents need local lookup.", "--requirements", "Return ADRs by tag.", "--constraints", "No external deps.", "--acceptance", "list --tag storage works.")
+	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "new", "--title", "Local query index", "--tags", "storage, query", "--context", "Agents need local lookup.", "--requirements", "Return ADRs by tag.", "--constraints", "No external deps.", "--acceptance", "list --tag storage works.")
 	if code != exitOK {
 		t.Fatalf("new spec code = %d", code)
 	}
@@ -554,7 +560,7 @@ func TestCreateListSearchAndShowSpec(t *testing.T) {
 		t.Fatalf("created spec = %#v", created)
 	}
 
-	code, env = runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "list", "--kind", "spec", "--tag", "storage")
+	code, env = runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "list", "--tag", "storage")
 	if code != exitOK {
 		t.Fatalf("list code = %d", code)
 	}
@@ -589,13 +595,13 @@ func TestCreateListSearchAndShowSpec(t *testing.T) {
 func TestADRAndSPECNumberIndependently(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "First ADR"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "adr", "new", "--title", "First ADR"); code != exitOK {
 		t.Fatalf("adr new code = %d", code)
 	}
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "First SPEC"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "new", "--title", "First SPEC"); code != exitOK {
 		t.Fatalf("spec new code = %d", code)
 	}
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "Second ADR"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "adr", "new", "--title", "Second ADR"); code != exitOK {
 		t.Fatalf("second adr code = %d", code)
 	}
 	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "list")
@@ -619,10 +625,10 @@ func TestADRAndSPECNumberIndependently(t *testing.T) {
 func TestSupersedeRejectsCrossKindReplacement(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--title", "Old ADR"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "adr", "new", "--title", "Old ADR"); code != exitOK {
 		t.Fatalf("adr new code = %d", code)
 	}
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Replacement SPEC"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "new", "--title", "Replacement SPEC"); code != exitOK {
 		t.Fatalf("spec new code = %d", code)
 	}
 	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "supersede", "--id", "ADR-0001", "--by", "SPEC-0001", "--dry-run")
@@ -638,7 +644,7 @@ func TestSupersedeRejectsCrossKindReplacement(t *testing.T) {
 func TestAcceptMutatesSpec(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "new", "--kind", "spec", "--title", "Candidate spec"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "spec", "new", "--title", "Candidate spec"); code != exitOK {
 		t.Fatalf("spec new code = %d", code)
 	}
 	if code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "accept", "--id", "SPEC-0001", "--reason", "Approved.", "--dry-run"); code != exitOK || env["status"] != "planned" {
@@ -664,7 +670,7 @@ func TestAcceptMutatesSpec(t *testing.T) {
 func TestDoctorReportsMissingSpecDirectory(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "init", "--kind", "adr"); code != exitOK {
+	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "adr", "init"); code != exitOK {
 		t.Fatalf("init code = %d", code)
 	}
 	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "doctor")
@@ -686,14 +692,27 @@ func TestDoctorReportsMissingSpecDirectory(t *testing.T) {
 	}
 }
 
-func TestInitKindRejectsInvalidKind(t *testing.T) {
+func TestNewAndInitRequireKindPrefix(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "init", "--kind", "rfc")
-	if code != exitUsage {
-		t.Fatalf("code = %d env = %#v", code, env)
+	for _, command := range []string{"new", "init"} {
+		code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, command)
+		if code != exitUsage {
+			t.Fatalf("%s code = %d env = %#v", command, code, env)
+		}
+		if env["error"].(map[string]any)["code"] != "kind_prefix_required" {
+			t.Fatalf("%s error = %#v", command, env["error"])
+		}
 	}
-	if env["error"].(map[string]any)["code"] != "invalid_kind" {
-		t.Fatalf("error = %#v", env["error"])
+}
+
+func TestKindPrefixRequiresKnownSubcommand(t *testing.T) {
+	code, env := runForTest(t, "adr")
+	if code != exitUsage || env["error"].(map[string]any)["code"] != "missing_kind_subcommand" {
+		t.Fatalf("bare adr code=%d env=%#v", code, env)
+	}
+	code, env = runForTest(t, "spec", "show", "--id", "SPEC-0001")
+	if code != exitUsage || env["error"].(map[string]any)["code"] != "unknown_command" {
+		t.Fatalf("spec show code=%d env=%#v", code, env)
 	}
 }

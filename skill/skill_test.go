@@ -6,8 +6,8 @@ import (
 )
 
 func TestVersionBumped(t *testing.T) {
-	if Version != "4" {
-		t.Fatalf("expected skill version 4, got %q", Version)
+	if Version != "5" {
+		t.Fatalf("expected skill version 5, got %q", Version)
 	}
 }
 

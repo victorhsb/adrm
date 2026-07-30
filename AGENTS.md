@@ -38,14 +38,15 @@ subcommand: `canon --adr-dir x list`, not `canon list --adr-dir x`.
 The CLI manages two kinds with the same parseable shape but separate
 directories and independent numbering:
 
-- ADR: default kind, stored in `docs/adr` (`--adr-dir`), ids like `ADR-0001`.
+- ADR: stored in `docs/adr` (`--adr-dir`), ids like `ADR-0001`.
 - SPEC: stored in `docs/spec` (`--spec-dir`), ids like `SPEC-0001`; captures
   functional requirements (`--requirements`, `--acceptance`).
 
-Commands that create or list documents take `--kind adr|spec` (default
-`adr`). Commands that take `--id` route by id prefix, so no `--kind` is
-needed. `doctor` and `init --kind ...` handle both directories; a missing
-`docs/spec` is a warning, not an error.
+Commands that create or scope documents by kind are kind-prefixed:
+`canon adr new|list|search|init` and `canon spec new|list|search|init`
+(ADR-0009). Plain `canon list` and `canon search` cover both kinds. Commands
+that take `--id` route by id prefix, so they need no kind prefix. `doctor`
+checks both directories; a missing `docs/spec` is a warning, not an error.
 
 ## ADR/SPEC Rules
 
@@ -126,7 +127,7 @@ For CLI smoke checks, prefer dry-run commands against a temp directory so
 nothing is left behind:
 
 ```sh
-go run ./cmd/canon --adr-dir /private/tmp/canon-smoke new --title "Smoke test" --dry-run
+go run ./cmd/canon --adr-dir /private/tmp/canon-smoke adr new --title "Smoke test" --dry-run
 ```
 
 For a more complete install check:

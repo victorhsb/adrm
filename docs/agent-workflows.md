@@ -61,8 +61,8 @@ ADR ids are the composable selectors.
 ## Creating a decision
 
 ```sh
-canon new --kind adr --title "Use SQLite for local query index" --status proposed --dry-run
-canon new --kind adr --title "Use SQLite for local query index" --status proposed --tags "storage,query" --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes." --consequences "The index can be rebuilt from ADR markdown."
+canon adr new --title "Use SQLite for local query index" --status proposed --dry-run
+canon adr new --title "Use SQLite for local query index" --status proposed --tags "storage,query" --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes." --consequences "The index can be rebuilt from ADR markdown."
 canon show --id ADR-0001
 ```
 
@@ -72,8 +72,8 @@ SPEC files capture functional requirements with their own numbering and
 directory. They use the same lifecycle commands as ADRs.
 
 ```sh
-canon new --kind spec --title "Local query index" --status proposed --dry-run
-canon new --kind spec --title "Local query index" --tags "storage,query" --context "Agents need fast local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
+canon spec new --title "Local query index" --status proposed --dry-run
+canon spec new --title "Local query index" --tags "storage,query" --context "Agents need fast local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
 canon show --id SPEC-0001
 ```
 
