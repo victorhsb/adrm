@@ -9,7 +9,7 @@ import (
 
 const (
 	Name              = "adrm"
-	Version           = "2"
+	Version           = "3"
 	FileName          = "SKILL.md"
 	DefaultInstallDir = ".agents/skills/adrm"
 )
@@ -74,7 +74,7 @@ func hashWithoutHashComment(content string) string {
 func managedPayload() string {
 	return strings.TrimSpace(`---
 name: adrm
-description: Manage Architecture Decision Records with the adrm CLI in agent-led workflows.
+description: Manage Architecture Decision Records (ADRs) and SPECs with the adrm CLI. Use whenever creating, recording, or revisiting an architectural decision; transitioning an ADR or SPEC through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history; or initializing ADR storage - even if the user does not mention adrm by name.
 ---
 `+versionComment()+`
 
@@ -87,61 +87,22 @@ Use adrm to manage Architecture Decision Records without guessing repository sta
 1. Start with `+"`adrm commands`"+` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
 2. Run `+"`adrm doctor`"+` before mutating ADRs. If it reports a missing ADR directory, preview initialization with `+"`adrm init --dry-run`"+` before applying `+"`adrm init`"+`.
 3. Use JSON output unless a human explicitly asks for text. Every JSON response has `+"`schema_version`"+`, `+"`status`"+`, `+"`data`"+`, and optional `+"`error`"+` / `+"`next_actions`"+`.
-4. For every mutating command, run the same command with `+"`--dry-run`"+` first and verify the returned plan. The dry-run response includes `+"`No changes were made.`"+` in warnings.
+4. For every mutating command, run the same command with `+"`--dry-run`"+` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `+"`No changes were made.`"+` in warnings.
 5. Use `+"`adrm list`"+`, `+"`adrm search --query ...`"+`, and `+"`adrm show --id ...`"+` to gather context before changing an ADR.
 6. Prefer selectors from CLI output. ADR ids are stable strings like `+"`ADR-0001`"+` and can be passed to `+"`--id`"+` or `+"`--by`"+`.
 
-## Common workflows
+## Common commands
 
-Create an ADR:
+Preview each of these with `+"`--dry-run`"+` first (rule 4), then apply:
 
 `+"```sh"+`
-adrm new --title "Use SQLite for local query index" --status proposed --dry-run
 adrm new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."
-`+"```"+`
-
-Accept an ADR:
-
-`+"```sh"+`
-adrm accept --id ADR-0001 --reason "Approved by the team." --dry-run
 adrm accept --id ADR-0001 --reason "Approved by the team."
-`+"```"+`
-
-Reject an ADR:
-
-`+"```sh"+`
-adrm reject --id ADR-0001 --reason "Chose a different approach." --dry-run
 adrm reject --id ADR-0001 --reason "Chose a different approach."
-`+"```"+`
-
-Supersede an ADR:
-
-`+"```sh"+`
-adrm search --query "old storage decision"
-adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current storage approach." --dry-run
 adrm supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current storage approach."
-`+"```"+`
-
-Deprecate an ADR:
-
-`+"```sh"+`
-adrm deprecate --id ADR-0003 --reason "The system no longer uses this component." --dry-run
 adrm deprecate --id ADR-0003 --reason "The system no longer uses this component."
-`+"```"+`
-
-Append new context:
-
-`+"```sh"+`
-adrm append --id ADR-0002 --title "Implementation note" --body "The initial rollout used the default local index." --dry-run
 adrm append --id ADR-0002 --title "Implementation note" --body "The initial rollout used the default local index."
-`+"```"+`
-
-Install or update this skill in a repository:
-
-`+"```sh"+`
-adrm skill install --dry-run
 adrm skill install
-adrm skill update --dry-run
 adrm skill update
 `+"```"+`
 

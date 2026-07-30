@@ -6,8 +6,24 @@ import (
 )
 
 func TestVersionBumped(t *testing.T) {
-	if Version != "2" {
-		t.Fatalf("expected skill version 2, got %q", Version)
+	if Version != "3" {
+		t.Fatalf("expected skill version 3, got %q", Version)
+	}
+}
+
+func TestCommandExamplesDoNotRepeatDryRun(t *testing.T) {
+	content := Content()
+	const marker = "## Common commands"
+	idx := strings.Index(content, marker)
+	if idx < 0 {
+		t.Fatalf("skill content missing %q section:\n%s", marker, content)
+	}
+	// Dry-run discipline is stated once in the operating rules; command
+	// example lines must not repeat --dry-run variants.
+	for _, line := range strings.Split(content[idx:], "\n") {
+		if strings.HasPrefix(line, "adrm ") && strings.Contains(line, "--dry-run") {
+			t.Fatalf("command example repeats --dry-run: %q", line)
+		}
 	}
 }
 
