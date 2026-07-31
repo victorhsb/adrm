@@ -84,7 +84,9 @@ or agent operating model.
 Keep the CLI agent-friendly:
 
 - JSON output remains the default. Use `--format text` (or `-t`) for
-  human-readable output only; do not parse text in automation.
+  human-readable output only. Use `--format context` only with list commands
+  when producing bounded Markdown for prompt injection; do not parse either
+  text format in automation.
 - Every JSON response includes `schema_version`.
 - Read commands are deterministic and parseable.
 - Mutating commands support `--dry-run`.

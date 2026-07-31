@@ -80,7 +80,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	humanReadable := false
 	global.StringVar(&opts.ADRDir, "adr-dir", defaultADRDir, "ADR directory")
 	global.StringVar(&opts.SpecDir, "spec-dir", defaultSpecDir, "SPEC directory")
-	global.StringVar(&opts.Format, "format", "json", "output format: json or text")
+	global.StringVar(&opts.Format, "format", "json", "output format: json, text, or context")
 	global.BoolVar(&humanReadable, "t", false, "shorthand for --format text")
 	if help, err := parseFlags(global, args); err != nil {
 		writeEnvelope(stdout, usageError("canon", err.Error()), opts.Format)
@@ -91,11 +91,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if humanReadable {
 		opts.Format = "text"
 	}
-	if opts.Format != "json" && opts.Format != "text" {
-		writeEnvelope(stdout, errorEnvelope("canon", "invalid_format", "usage", "format must be json or text", "Use --format json or --format text, or -t for text."), "json")
+	if opts.Format != "json" && opts.Format != "text" && opts.Format != "context" {
+		writeEnvelope(stdout, errorEnvelope("canon", "invalid_format", "usage", "format must be json, text, or context", "Use --format json, --format text, --format context, or -t for text."), "json")
 		return exitUsage
 	}
 	remaining := global.Args()
+	if opts.Format == "context" && !supportsContextFormat(remaining) {
+		command := requestedCommand(remaining)
+		writeEnvelope(stdout, errorEnvelope(command, "unsupported_context_format", "usage", fmt.Sprintf("context format is not supported by %s", command), "Use --format context with list, adr list, or spec list."), opts.Format)
+		return exitUsage
+	}
 	if len(remaining) == 0 {
 		writeEnvelope(stdout, Envelope{
 			Command: "canon",
@@ -184,13 +189,33 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 			"global_flags": []map[string]string{
 				{"name": "--adr-dir", "default": defaultADRDir, "purpose": "Select ADR storage directory."},
 				{"name": "--spec-dir", "default": defaultSpecDir, "purpose": "Select SPEC storage directory."},
-				{"name": "--format", "default": "json", "purpose": "Choose json or text output."},
+				{"name": "--format", "default": "json", "purpose": "Choose json, text, or list-only context output."},
 				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
 			},
 		},
 		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR and SPEC directories are ready.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
+}
+
+func supportsContextFormat(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if args[0] == "list" {
+		return true
+	}
+	return len(args) > 1 && (args[0] == KindADR || args[0] == KindSPEC) && args[1] == "list"
+}
+
+func requestedCommand(args []string) string {
+	if len(args) == 0 {
+		return "canon"
+	}
+	if len(args) > 1 && (args[0] == KindADR || args[0] == KindSPEC) {
+		return args[0] + " " + args[1]
+	}
+	return args[0]
 }
 
 func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {

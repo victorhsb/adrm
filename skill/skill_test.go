@@ -6,8 +6,15 @@ import (
 )
 
 func TestVersionBumped(t *testing.T) {
-	if Version != "5" {
-		t.Fatalf("expected skill version 5, got %q", Version)
+	if Version != "6" {
+		t.Fatalf("expected skill version 6, got %q", Version)
+	}
+}
+
+func TestContentContainsContextProjectionGuidance(t *testing.T) {
+	content := Content()
+	if !strings.Contains(content, "canon --format context adr list --status accepted") {
+		t.Fatalf("skill content missing context projection guidance:\n%s", content)
 	}
 }
 

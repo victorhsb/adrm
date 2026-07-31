@@ -2,8 +2,8 @@
 name: canon
 description: Manage Architecture Decision Records (ADRs) and SPECs with the canon CLI. Use whenever creating, recording, or revisiting an architectural decision; transitioning an ADR or SPEC through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history; or initializing ADR storage - even if the user does not mention canon by name.
 ---
-<!-- canon-skill-version: 5 -->
-<!-- canon-skill-hash: sha256:62e4cc90292f13c4650291e67ca9299eb5c9180cf35bfdc2ec5d1db3286cc26b -->
+<!-- canon-skill-version: 6 -->
+<!-- canon-skill-hash: sha256:0712f8344b6b3cbcd6e506e863a7f65e0209d4d21de0f41a293bc4435efe68a8 -->
 
 # CANON Agent Skill
 
@@ -13,7 +13,7 @@ Use canon to manage Architecture Decision Records without guessing repository st
 
 1. Start with `canon commands` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
 2. Run `canon doctor` before mutating ADRs. If it reports a missing ADR or SPEC directory, preview initialization with `canon adr init --dry-run` or `canon spec init --dry-run` before applying.
-3. Use JSON output unless a human explicitly asks for text. Every JSON response has `schema_version`, `status`, `data`, and optional `error` / `next_actions`.
+3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `canon --format context adr list --status accepted` emits concise Markdown; use context format only with list commands. Every JSON response has `schema_version`, `status`, `data`, and optional `error` / `next_actions`.
 4. For every mutating command, run the same command with `--dry-run` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `No changes were made.` in warnings.
 5. Use `canon list` (both kinds), `canon adr list` / `canon spec list`, `canon search --query ...`, and `canon show --id ...` to gather context before changing an ADR.
 6. Prefer selectors from CLI output. ADR ids are stable strings like `ADR-0001` and can be passed to `--id` or `--by`.

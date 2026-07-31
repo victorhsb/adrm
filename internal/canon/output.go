@@ -24,9 +24,47 @@ func writeEnvelope(out io.Writer, env Envelope, format string) {
 		writeText(out, env)
 		return
 	}
+	if format == "context" {
+		writeContext(out, env)
+		return
+	}
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(env)
+}
+
+func writeContext(out io.Writer, env Envelope) {
+	if env.Error != nil {
+		fmt.Fprintf(out, "## Canon Error\n\n- `%s`: %s\n", env.Error.Code, env.Error.Message)
+		return
+	}
+
+	payload, ok := env.Data.(map[string]any)
+	if !ok {
+		return
+	}
+	var data struct {
+		ADRs []ADR `json:"adrs"`
+	}
+	if !jsonCopy(payload, &data) {
+		return
+	}
+
+	heading := "Project Documents"
+	switch env.Command {
+	case "adr list":
+		heading = "Architecture Decision Records"
+	case "spec list":
+		heading = "Specifications"
+	}
+	fmt.Fprintf(out, "## %s\n\n", heading)
+	if len(data.ADRs) == 0 {
+		fmt.Fprintln(out, "_No matching documents._")
+		return
+	}
+	for _, adr := range data.ADRs {
+		fmt.Fprintf(out, "- `%s`: %s\n", adr.ID, adr.Title)
+	}
 }
 
 func writeText(out io.Writer, env Envelope) {

@@ -28,6 +28,17 @@ func runForTest(t *testing.T, args ...string) (int, map[string]any) {
 	return code, env
 }
 
+func runRawForTest(t *testing.T, args ...string) (int, string) {
+	t.Helper()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(args, &stdout, &stderr)
+	if stderr.Len() > 0 {
+		t.Logf("stderr: %s", stderr.String())
+	}
+	return code, stdout.String()
+}
+
 func TestCommandsExposeAgentMetadata(t *testing.T) {
 	code, env := runForTest(t, "commands")
 	if code != exitOK {
@@ -496,6 +507,85 @@ func TestCommandsExposeHumanReadableFlag(t *testing.T) {
 	}
 	if !sawHumanReadable {
 		t.Fatalf("global flags missing -t: %#v", flags)
+	}
+}
+
+func TestContextFormatRendersAcceptedADRList(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Use SQLite", "--status", "accepted"); code != exitOK {
+		t.Fatalf("accepted new code = %d", code)
+	}
+	if code, _ := runForTest(t, "--adr-dir", dir, "adr", "new", "--title", "Evaluate Postgres"); code != exitOK {
+		t.Fatalf("proposed new code = %d", code)
+	}
+
+	code, output := runRawForTest(t, "--adr-dir", dir, "--format", "context", "adr", "list", "--status", "accepted")
+	if code != exitOK {
+		t.Fatalf("code = %d, output:\n%s", code, output)
+	}
+	want := "## Architecture Decision Records\n\n- `ADR-0001`: Use SQLite\n"
+	if output != want {
+		t.Fatalf("context output mismatch\nwant:\n%s\ngot:\n%s", want, output)
+	}
+}
+
+func TestContextFormatSupportsCombinedAndSpecLists(t *testing.T) {
+	adrDir := filepath.Join(t.TempDir(), "adr")
+	specDir := filepath.Join(t.TempDir(), "spec")
+	if code, _ := runForTest(t, "--adr-dir", adrDir, "--spec-dir", specDir, "adr", "new", "--title", "Use SQLite", "--status", "accepted"); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	if code, _ := runForTest(t, "--adr-dir", adrDir, "--spec-dir", specDir, "spec", "new", "--title", "Query storage", "--status", "accepted"); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "combined",
+			args: []string{"list", "--status", "accepted"},
+			want: "## Project Documents\n\n- `ADR-0001`: Use SQLite\n- `SPEC-0001`: Query storage\n",
+		},
+		{
+			name: "spec",
+			args: []string{"spec", "list", "--status", "accepted"},
+			want: "## Specifications\n\n- `SPEC-0001`: Query storage\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := []string{"--adr-dir", adrDir, "--spec-dir", specDir, "--format", "context"}
+			code, output := runRawForTest(t, append(args, tt.args...)...)
+			if code != exitOK || output != tt.want {
+				t.Fatalf("code = %d\nwant:\n%s\ngot:\n%s", code, tt.want, output)
+			}
+		})
+	}
+}
+
+func TestContextFormatRendersEmptyList(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "adr")
+	code, output := runRawForTest(t, "--adr-dir", dir, "--format", "context", "adr", "list", "--status", "accepted")
+	if code != exitOK {
+		t.Fatalf("code = %d, output:\n%s", code, output)
+	}
+	want := "## Architecture Decision Records\n\n_No matching documents._\n"
+	if output != want {
+		t.Fatalf("context output mismatch\nwant:\n%s\ngot:\n%s", want, output)
+	}
+}
+
+func TestContextFormatRejectsUnsupportedCommands(t *testing.T) {
+	code, output := runRawForTest(t, "--format", "context", "show", "--id", "ADR-0001")
+	if code != exitUsage {
+		t.Fatalf("code = %d, output:\n%s", code, output)
+	}
+	want := "## Canon Error\n\n- `unsupported_context_format`: context format is not supported by show\n"
+	if output != want {
+		t.Fatalf("context error mismatch\nwant:\n%s\ngot:\n%s", want, output)
 	}
 }
 

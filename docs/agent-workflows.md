@@ -172,3 +172,14 @@ canon --format text doctor
 ```
 
 Do not parse text output in automation.
+
+For bounded prompt or system-context injection, list commands support a concise
+Markdown projection. Keep selection explicit so only effective decisions enter
+the prompt:
+
+```sh
+canon --format context adr list --status accepted
+```
+
+Context output contains only a heading, stable ids, and titles. It omits the
+JSON envelope and `next_actions`; use JSON for all programmatic processing.

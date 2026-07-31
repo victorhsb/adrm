@@ -1,6 +1,7 @@
 # Command Reference
 
-`canon` emits JSON by default. Global flags must appear before the command.
+`canon` emits JSON by default. Text and context output are explicit opt-ins.
+Global flags must appear before the command.
 
 ```sh
 canon --adr-dir docs/adr --spec-dir docs/spec --format json list
@@ -41,8 +42,12 @@ Fields:
 
 - `--adr-dir`: ADR storage directory. Default: `docs/adr`.
 - `--spec-dir`: SPEC storage directory. Default: `docs/spec`.
-- `--format`: output format. Values: `json`, `text`. Default: `json`.
+- `--format`: output format. Values: `json`, `text`, `context`. Default: `json`.
 - `-t`: shorthand for `--format text`.
+
+The `context` format is supported only by `list`, `adr list`, and `spec list`.
+It emits a bounded Markdown projection for prompt injection. Other commands
+reject it with `unsupported_context_format`.
 
 ## `commands`
 
@@ -148,12 +153,26 @@ canon list
 canon list --status accepted
 canon adr list --status accepted
 canon spec list --tag storage
+canon --format context adr list --status accepted
 ```
 
 Flags:
 
 - `--status`: filter by status.
 - `--tag`: filter by tag.
+
+Context output keeps filtering explicit and contains only a heading plus each
+matching document's stable id and title:
+
+```markdown
+## Architecture Decision Records
+
+- `ADR-0002`: Install repository-local agent skill
+- `ADR-0003`: Use a four-test model for ADR-worthiness in the agent skill
+```
+
+It omits the response envelope, count, metadata, warnings, and `next_actions`.
+An empty result contains the heading followed by `_No matching documents._`.
 
 Safety: read-only.
 
