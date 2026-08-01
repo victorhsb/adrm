@@ -1,15 +1,15 @@
 ---
 kind: adr
-id: ADR-0010
+id: ADR-0009
 title: Absorb doctor's health checks into a shared validation engine
-status: proposed
+status: accepted
 date: 2026-07-30
 tags: cli, validation
 supersedes: 
 superseded_by: 
 deprecated_by: 
 ---
-# ADR-0010: Absorb doctor's health checks into a shared validation engine
+# ADR-0009: Absorb doctor's health checks into a shared validation engine
 
 ## Status
 

@@ -1,6 +1,6 @@
 ---
 kind: adr
-id: ADR-0009
+id: ADR-0008
 title: Use kind-prefixed commands instead of --kind flag
 status: accepted
 date: 2026-07-30
@@ -9,7 +9,7 @@ supersedes:
 superseded_by: 
 deprecated_by: 
 ---
-# ADR-0009: Use kind-prefixed commands instead of --kind flag
+# ADR-0008: Use kind-prefixed commands instead of --kind flag
 
 ## Status
 

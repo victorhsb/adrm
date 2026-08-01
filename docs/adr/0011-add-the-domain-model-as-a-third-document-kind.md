@@ -1,6 +1,6 @@
 ---
 kind: adr
-id: ADR-0012
+id: ADR-0011
 title: Add the Domain Model as a third document kind
 status: accepted
 date: 2026-08-01
@@ -9,7 +9,7 @@ supersedes:
 superseded_by: 
 deprecated_by: 
 ---
-# ADR-0012: Add the Domain Model as a third document kind
+# ADR-0011: Add the Domain Model as a third document kind
 
 ## Status
 
@@ -31,4 +31,4 @@ Agents define, search, and challenge terminology through the same envelope, dry-
 
 Date: 2026-08-01
 
-Decided in a grill-with-docs design review; see ADR-0007 and ADR-0009 for the kind and command-prefix precedents this extends.
+Decided in a grill-with-docs design review; see ADR-0006 and ADR-0008 for the kind and command-prefix precedents this extends.

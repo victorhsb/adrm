@@ -4,13 +4,13 @@
     {
       "id": 1,
       "prompt": "Plan the implementation of the corpus validation command described by the current project documents. Do not make any changes yet; I want an implementation-ready plan that another agent could execute.",
-      "expected_output": "A repository-grounded plan that finds ADR-0010 and SPEC-0001, clearly labels both as proposed rather than binding, relates the work to accepted CLI constraints, identifies likely implementation and documentation locations, and provides concrete verification commands.",
+      "expected_output": "A repository-grounded plan that finds ADR-0009 and SPEC-0001, clearly labels both as proposed rather than binding, relates the work to accepted CLI constraints, identifies likely implementation and documentation locations, and provides concrete verification commands.",
       "files": []
     },
     {
       "id": 2,
       "prompt": "Think through a plan for allowing --format context on search commands as well as list commands. I care about keeping the output compact for prompt injection, but do not implement it yet.",
-      "expected_output": "A plan that identifies ADR-0011 as the governing accepted decision, recognizes that extending context to search is an explicit output-contract decision, inspects current search and rendering code, and covers deterministic output, errors, tests, registry metadata, and documentation.",
+      "expected_output": "A plan that identifies ADR-0010 as the governing accepted decision, recognizes that extending context to search is an explicit output-contract decision, inspects current search and rendering code, and covers deterministic output, errors, tests, registry metadata, and documentation.",
       "files": []
     },
     {

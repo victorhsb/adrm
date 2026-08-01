@@ -1,6 +1,6 @@
 ---
 kind: adr
-id: ADR-0008
+id: ADR-0007
 title: Rename the project from adrm to canon
 status: accepted
 date: 2026-07-30
@@ -9,7 +9,7 @@ supersedes:
 superseded_by: 
 deprecated_by: 
 ---
-# ADR-0008: Rename the project from adrm to canon
+# ADR-0007: Rename the project from adrm to canon
 
 ## Status
 

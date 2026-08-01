@@ -1,6 +1,6 @@
 ---
 kind: adr
-id: ADR-0007
+id: ADR-0006
 title: Support multiple document kinds with focus on ADR and SPEC
 status: accepted
 date: 2026-07-22
@@ -9,7 +9,7 @@ supersedes:
 superseded_by:
 deprecated_by:
 ---
-# ADR-0007: Support multiple document kinds with focus on ADR and SPEC
+# ADR-0006: Support multiple document kinds with focus on ADR and SPEC
 
 ## Status
 

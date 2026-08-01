@@ -1,6 +1,6 @@
 ---
 kind: adr
-id: ADR-0011
+id: ADR-0010
 title: Provide a context-focused Markdown output projection
 status: accepted
 date: 2026-07-30
@@ -9,7 +9,7 @@ supersedes:
 superseded_by: 
 deprecated_by: 
 ---
-# ADR-0011: Provide a context-focused Markdown output projection
+# ADR-0010: Provide a context-focused Markdown output projection
 
 ## Status
 
