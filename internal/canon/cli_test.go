@@ -52,7 +52,7 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 	if len(commands) == 0 {
 		t.Fatal("expected commands")
 	}
-	var sawNew, sawSpecNew, sawSkillInstall, sawSkillUpdate bool
+	var sawNew, sawSpecNew, sawDomainNew, sawSkillInstall, sawSkillUpdate bool
 	for _, raw := range commands {
 		command := raw.(map[string]any)
 		if command["name"] == "adr new" {
@@ -65,6 +65,12 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 			sawSpecNew = true
 			if command["mutating"] != true || command["has_dry_run"] != true {
 				t.Fatalf("spec new command metadata = %#v", command)
+			}
+		}
+		if command["name"] == "domain new" {
+			sawDomainNew = true
+			if command["mutating"] != true || command["has_dry_run"] != true {
+				t.Fatalf("domain new command metadata = %#v", command)
 			}
 		}
 		if command["name"] == "skill install" {
@@ -80,8 +86,8 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 			}
 		}
 	}
-	if !sawNew || !sawSpecNew {
-		t.Fatalf("missing new commands: adr=%v spec=%v", sawNew, sawSpecNew)
+	if !sawNew || !sawSpecNew || !sawDomainNew {
+		t.Fatalf("missing new commands: adr=%v spec=%v domain=%v", sawNew, sawSpecNew, sawDomainNew)
 	}
 	if !sawSkillInstall || !sawSkillUpdate {
 		t.Fatalf("missing skill install/update commands: install=%v update=%v", sawSkillInstall, sawSkillUpdate)
@@ -804,5 +810,298 @@ func TestKindPrefixRequiresKnownSubcommand(t *testing.T) {
 	code, env = runForTest(t, "spec", "show", "--id", "SPEC-0001")
 	if code != exitUsage || env["error"].(map[string]any)["code"] != "unknown_command" {
 		t.Fatalf("spec show code=%d env=%#v", code, env)
+	}
+}
+
+func TestNewDomainDryRunDoesNotWriteFile(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	code, env := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "ADR", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("code = %d", code)
+	}
+	if env["status"] != "planned" {
+		t.Fatalf("status = %v", env["status"])
+	}
+	if _, err := os.Stat(domain); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created domain directory: %v", err)
+	}
+	data := env["data"].(map[string]any)
+	created := data["adr"].(map[string]any)
+	if created["kind"] != "domain" || created["id"] != "DM-0001" {
+		t.Fatalf("domain preview = %#v", created)
+	}
+	warnings := env["warnings"].([]any)
+	if warnings[0] != "No changes were made." {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+}
+
+func TestCreateListSearchAndShowDomain(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	code, env := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "ADR", "--tags", "glossary", "--definition", "A dated, narrowly-scoped architecture commitment.", "--avoid", "design doc: too broad; ticket: tracks work, not decisions", "--relationships", "See [SPEC](0002-spec.md).")
+	if code != exitOK {
+		t.Fatalf("new domain code = %d", code)
+	}
+	created := env["data"].(map[string]any)["adr"].(map[string]any)
+	if created["id"] != "DM-0001" || created["kind"] != "domain" {
+		t.Fatalf("created domain entry = %#v", created)
+	}
+
+	code, env = runKindTest(t, "--domain-dir", domain, "domain", "list", "--tag", "glossary")
+	if code != exitOK {
+		t.Fatalf("list code = %d", code)
+	}
+	if env["data"].(map[string]any)["count"] != float64(1) {
+		t.Fatalf("list data = %#v", env["data"])
+	}
+
+	code, env = runKindTest(t, "--domain-dir", domain, "domain", "search", "--query", "commitment")
+	if code != exitOK {
+		t.Fatalf("search code = %d", code)
+	}
+	if env["data"].(map[string]any)["count"] != float64(1) {
+		t.Fatalf("search data = %#v", env["data"])
+	}
+
+	code, env = runKindTest(t, "--domain-dir", domain, "show", "--id", "DM-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	shown := env["data"].(map[string]any)["adr"].(map[string]any)
+	if shown["kind"] != "domain" || shown["content"] == "" {
+		t.Fatalf("show domain entry = %#v", shown)
+	}
+	content := shown["content"].(string)
+	for _, section := range []string{"## Definition", "## Avoid", "## Relationships"} {
+		if !strings.Contains(content, section) {
+			t.Fatalf("domain content missing %s:\n%s", section, content)
+		}
+	}
+	if !strings.Contains(content, "- **design doc** — too broad") || !strings.Contains(content, "- **ticket** — tracks work, not decisions") {
+		t.Fatalf("domain avoid list not rendered as reasoned bullets:\n%s", content)
+	}
+}
+
+func TestThreeKindsNumberIndependently(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "adr", "new", "--title", "First ADR")...); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "First entry")...); code != exitOK {
+		t.Fatalf("domain new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "spec", "new", "--title", "First SPEC")...); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "adr", "new", "--title", "Second ADR")...); code != exitOK {
+		t.Fatalf("second adr code = %d", code)
+	}
+	code, env := runKindTest(t, append(dirs, "list")...)
+	if code != exitOK {
+		t.Fatalf("list code = %d", code)
+	}
+	data := env["data"].(map[string]any)
+	if data["count"] != float64(4) {
+		t.Fatalf("count = %v", data["count"])
+	}
+	adrs := data["adrs"].([]any)
+	ids := []string{}
+	for _, raw := range adrs {
+		ids = append(ids, raw.(map[string]any)["id"].(string))
+	}
+	want := []string{"ADR-0001", "ADR-0002", "DM-0001", "SPEC-0001"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Fatalf("ordered ids = %v, want %v", ids, want)
+	}
+}
+
+func TestSupersedeRejectsCrossKindDomainReplacement(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Old entry")...); code != exitOK {
+		t.Fatalf("domain new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "adr", "new", "--title", "Replacement ADR")...); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	code, env := runKindTest(t, append(dirs, "supersede", "--id", "DM-0001", "--by", "ADR-0001", "--dry-run")...)
+	if code != exitState {
+		t.Fatalf("cross-kind supersede code = %d env = %#v", code, env)
+	}
+	errData := env["error"].(map[string]any)
+	if errData["code"] != "cross_kind_supersede" {
+		t.Fatalf("error = %#v", errData)
+	}
+}
+
+func TestAcceptMutatesDomainEntry(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Candidate entry"); code != exitOK {
+		t.Fatalf("domain new code = %d", code)
+	}
+	if code, env := runKindTest(t, "--domain-dir", domain, "accept", "--id", "DM-0001", "--reason", "Canonized.", "--dry-run"); code != exitOK || env["status"] != "planned" {
+		t.Fatalf("accept dry-run code=%d env=%#v", code, env)
+	}
+	if code, _ := runKindTest(t, "--domain-dir", domain, "accept", "--id", "DM-0001", "--reason", "Canonized."); code != exitOK {
+		t.Fatalf("accept code = %d", code)
+	}
+	code, env := runKindTest(t, "--domain-dir", domain, "show", "--id", "DM-0001")
+	if code != exitOK {
+		t.Fatalf("show code = %d", code)
+	}
+	shown := env["data"].(map[string]any)["adr"].(map[string]any)
+	if shown["status"] != "accepted" {
+		t.Fatalf("status = %v", shown["status"])
+	}
+	content := shown["content"].(string)
+	if !strings.Contains(content, "## History: Accepted") || !strings.Contains(content, "Canonized.") {
+		t.Fatalf("domain content missing accepted history:\n%s", content)
+	}
+}
+
+func doctorDiagnostics(env map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, raw := range env["data"].(map[string]any)["diagnostics"].([]any) {
+		out = append(out, raw.(map[string]any))
+	}
+	return out
+}
+
+func TestDoctorReportsMissingDomainDirectory(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "adr", "init")...); code != exitOK {
+		t.Fatalf("adr init code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "spec", "init")...); code != exitOK {
+		t.Fatalf("spec init code = %d", code)
+	}
+	code, env := runKindTest(t, append(dirs, "doctor")...)
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("doctor status = %v", env["status"])
+	}
+	var sawDomainWarning bool
+	for _, d := range doctorDiagnostics(env) {
+		if d["name"] == "domain_directory" && d["status"] == "warning" {
+			sawDomainWarning = true
+		}
+	}
+	if !sawDomainWarning {
+		t.Fatalf("doctor missing domain_directory warning: %#v", env["data"])
+	}
+}
+
+func TestDoctorFlagsDuplicateAcceptedDomainTitles(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Order", "--status", "accepted"); code != exitOK {
+		t.Fatalf("first new code = %d", code)
+	}
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Order", "--status", "accepted"); code != exitOK {
+		t.Fatalf("second new code = %d", code)
+	}
+	code, env := runKindTest(t, "--domain-dir", domain, "doctor")
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("doctor status = %v", env["status"])
+	}
+	var sawDuplicate bool
+	for _, d := range doctorDiagnostics(env) {
+		if d["name"] == "domain_duplicate_title" && d["status"] == "warning" {
+			sawDuplicate = true
+			if !strings.Contains(d["message"].(string), "DM-0001") || !strings.Contains(d["message"].(string), "DM-0002") {
+				t.Fatalf("duplicate diagnostic missing ids: %#v", d)
+			}
+		}
+	}
+	if !sawDuplicate {
+		t.Fatalf("doctor missing domain_duplicate_title warning: %#v", env["data"])
+	}
+
+	// A single accepted entry for the title clears the finding.
+	if code, _ := runKindTest(t, "--domain-dir", domain, "deprecate", "--id", "DM-0002", "--reason", "Duplicate of DM-0001."); code != exitOK {
+		t.Fatalf("deprecate code = %d", code)
+	}
+	code, env = runKindTest(t, "--domain-dir", domain, "doctor")
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	for _, d := range doctorDiagnostics(env) {
+		if d["name"] == "domain_duplicate_title" {
+			t.Fatalf("duplicate finding persists after deprecating one entry: %#v", d)
+		}
+	}
+}
+
+func TestDoctorFlagsDeadDomainReferences(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Session"); code != exitOK {
+		t.Fatalf("first new code = %d", code)
+	}
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Connection", "--relationships", "Replaces [Session](0001-session.md)."); code != exitOK {
+		t.Fatalf("second new code = %d", code)
+	}
+
+	// While DM-0001 is live, references to it are healthy.
+	code, env := runKindTest(t, "--domain-dir", domain, "doctor")
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	for _, d := range doctorDiagnostics(env) {
+		if d["name"] == "domain_dead_reference" {
+			t.Fatalf("unexpected dead reference finding while target is live: %#v", d)
+		}
+	}
+
+	if code, _ := runKindTest(t, "--domain-dir", domain, "supersede", "--id", "DM-0001", "--by", "DM-0002", "--reason", "Redefined."); code != exitOK {
+		t.Fatalf("supersede code = %d", code)
+	}
+	code, env = runKindTest(t, "--domain-dir", domain, "doctor")
+	if code != exitOK {
+		t.Fatalf("doctor code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("doctor status = %v", env["status"])
+	}
+	var sawDeadReference bool
+	for _, d := range doctorDiagnostics(env) {
+		if d["name"] == "domain_dead_reference" && d["status"] == "warning" {
+			sawDeadReference = true
+			message := d["message"].(string)
+			if !strings.Contains(message, "DM-0002") || !strings.Contains(message, "DM-0001") {
+				t.Fatalf("dead reference diagnostic missing ids: %#v", d)
+			}
+			if !strings.Contains(d["suggested_fix"].(string), "DM-0002") {
+				t.Fatalf("dead reference fix should point at the successor: %#v", d)
+			}
+		}
+	}
+	if !sawDeadReference {
+		t.Fatalf("doctor missing domain_dead_reference warning: %#v", env["data"])
+	}
+}
+
+func TestContextFormatRendersDomainList(t *testing.T) {
+	domain := filepath.Join(t.TempDir(), "domain")
+	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "ADR", "--status", "accepted"); code != exitOK {
+		t.Fatalf("domain new code = %d", code)
+	}
+	code, output := runRawForTest(t, "--domain-dir", domain, "--format", "context", "domain", "list", "--status", "accepted")
+	if code != exitOK {
+		t.Fatalf("code = %d, output:\n%s", code, output)
+	}
+	want := "## Domain Model\n\n- `DM-0001`: ADR\n"
+	if output != want {
+		t.Fatalf("context output mismatch\nwant:\n%s\ngot:\n%s", want, output)
 	}
 }

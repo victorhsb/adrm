@@ -1,8 +1,10 @@
 # SPEC File Format
 
 `canon` stores SPECs as markdown files that share the ADR front-matter shape. A
-SPEC captures functional requirements; an ADR captures architecture decisions.
-The `kind` front-matter field (`spec`) distinguishes the two.
+SPEC captures functional requirements; an ADR captures architecture decisions;
+a domain entry defines one canonical concept. The `kind` front-matter field
+(`spec`) distinguishes the kinds. See `docs/domain-format.md` for the domain
+entry body.
 
 Default SPEC directory:
 

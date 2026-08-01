@@ -1,18 +1,19 @@
 ---
+kind: adr
 id: ADR-0003
 title: Use a four-test model for ADR-worthiness in the agent skill
-status: accepted
+status: deprecated
 date: 2026-07-01
 tags: 
 supersedes: 
 superseded_by: 
-deprecated_by: 
+deprecated_by: manual
 ---
 # ADR-0003: Use a four-test model for ADR-worthiness in the agent skill
 
 ## Status
 
-accepted
+deprecated
 
 ## Context
 
@@ -31,3 +32,9 @@ Agents will create fewer, higher-quality ADRs. ADRs will be independently supers
 Date: 2026-07-01
 
 Model is needed before agents create more ADRs.
+
+## History: Deprecated
+
+Date: 2026-08-01
+
+The ADR-worthiness rubric is a canonical concept, not an architecture decision. Under the narrowed trigger list, authority over the four-test model moves to DM-0004 (When to Use ADR). This record remains as the history of when the gate was adopted.

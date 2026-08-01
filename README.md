@@ -1,8 +1,9 @@
 # canon
 
 `canon` is a CLI for managing the canonical records of a codebase —
-Architecture Decision Records (ADRs) and software specifications (SPECs) — in
-agent-led workflows.
+Architecture Decision Records (ADRs), software specifications (SPECs), and the
+Domain Model (one canonical concept per domain entry) — in agent-led
+workflows.
 
 The initial command surface is intentionally agent-centric:
 
@@ -62,6 +63,8 @@ canon --adr-dir architecture/decisions list
 
 - [Command reference](docs/commands.md)
 - [ADR file format](docs/adr-format.md)
+- [SPEC file format](docs/spec-format.md)
+- [Domain entry file format](docs/domain-format.md)
 - [Agent workflow guide](docs/agent-workflows.md)
 - [Project roadmap](docs/roadmap.md)
 

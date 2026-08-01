@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -14,33 +15,39 @@ import (
 	"github.com/victorhsb/canon/skill"
 )
 
-// Repo holds the stores for every supported document kind. The CLI focuses on
-// ADRs and SPECs; both share the same parseable shape but live in separate
-// directories with independent numbering.
+// Repo holds the stores for every supported document kind. The CLI manages
+// ADRs, SPECs, and domain entries; all share the same parseable shape but
+// live in separate directories with independent numbering.
 type Repo struct {
-	ADR  Store
-	Spec Store
+	ADR    Store
+	Spec   Store
+	Domain Store
 }
 
 func NewRepo(opts GlobalOptions) Repo {
 	return Repo{
-		ADR:  NewStore(opts.ADRDir, KindADR),
-		Spec: NewStore(opts.SpecDir, KindSPEC),
+		ADR:    NewStore(opts.ADRDir, KindADR),
+		Spec:   NewStore(opts.SpecDir, KindSPEC),
+		Domain: NewStore(opts.DomainDir, KindDomain),
 	}
 }
 
 // StoreForKind returns the store for the requested kind. Unknown or empty
 // kinds resolve to the ADR store, which is the default document kind.
 func (r Repo) StoreForKind(kind string) Store {
-	if kind == KindSPEC {
+	switch kind {
+	case KindSPEC:
 		return r.Spec
+	case KindDomain:
+		return r.Domain
+	default:
+		return r.ADR
 	}
-	return r.ADR
 }
 
 // StoreForID selects a store by inspecting the id prefix. Bare numbers and
 // ADR- prefixed ids resolve to the ADR store; SPEC- prefixed ids resolve to
-// the SPEC store.
+// the SPEC store; DM- prefixed ids resolve to the domain store.
 func (r Repo) StoreForID(id string) (Store, error) {
 	kind, _, err := normalizeID(id)
 	if err != nil {
@@ -49,12 +56,12 @@ func (r Repo) StoreForID(id string) (Store, error) {
 	return r.StoreForKind(kind), nil
 }
 
-// All returns every parseable document across both stores, in stable order.
+// All returns every parseable document across all stores, in stable order.
 // Missing directories are treated as empty rather than errors so that a fresh
-// repository with only one kind initialized still lists cleanly.
+// repository with only some kinds initialized still lists cleanly.
 func (r Repo) All() ([]ADR, error) {
 	var docs []ADR
-	for _, store := range []Store{r.ADR, r.Spec} {
+	for _, store := range []Store{r.ADR, r.Spec, r.Domain} {
 		adrs, err := store.List()
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -80,6 +87,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	humanReadable := false
 	global.StringVar(&opts.ADRDir, "adr-dir", defaultADRDir, "ADR directory")
 	global.StringVar(&opts.SpecDir, "spec-dir", defaultSpecDir, "SPEC directory")
+	global.StringVar(&opts.DomainDir, "domain-dir", defaultDomainDir, "Domain entry directory")
 	global.StringVar(&opts.Format, "format", "json", "output format: json, text, or context")
 	global.BoolVar(&humanReadable, "t", false, "shorthand for --format text")
 	if help, err := parseFlags(global, args); err != nil {
@@ -98,7 +106,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	remaining := global.Args()
 	if opts.Format == "context" && !supportsContextFormat(remaining) {
 		command := requestedCommand(remaining)
-		writeEnvelope(stdout, errorEnvelope(command, "unsupported_context_format", "usage", fmt.Sprintf("context format is not supported by %s", command), "Use --format context with list, adr list, or spec list."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "unsupported_context_format", "usage", fmt.Sprintf("context format is not supported by %s", command), "Use --format context with list, adr list, spec list, or domain list."), opts.Format)
 		return exitUsage
 	}
 	if len(remaining) == 0 {
@@ -106,12 +114,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			Command: "canon",
 			Status:  "ok",
 			Data: map[string]any{
-				"purpose":  "Manage Architecture Decision Records and Specs for agent workflows.",
+				"purpose":  "Manage Architecture Decision Records, Specs, and Domain Entries for agent workflows.",
 				"commands": commandNames(),
 			},
 			NextActions: []NextAction{
 				{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
-				{Command: "canon doctor", Description: "Check ADR and SPEC repository readiness.", Safety: "read-only"},
+				{Command: "canon doctor", Description: "Check ADR, SPEC, and domain repository readiness.", Safety: "read-only"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -121,7 +129,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	commandArgs := remaining[1:]
 	repo := NewRepo(opts)
 
-	if command == KindADR || command == KindSPEC {
+	if command == KindADR || command == KindSPEC || command == KindDomain {
 		return runKindCommand(command, stdout, stderr, opts, repo, commandArgs)
 	}
 
@@ -131,7 +139,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "doctor":
 		return runDoctor(stdout, opts, repo)
 	case "init", "new":
-		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s` or `canon spec %s`.", command, command)), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s`, `canon spec %s`, or `canon domain %s`.", command, command, command)), opts.Format)
 		return exitUsage
 	case "list":
 		return runList(stdout, stderr, opts, repo, commandArgs, "")
@@ -189,11 +197,12 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 			"global_flags": []map[string]string{
 				{"name": "--adr-dir", "default": defaultADRDir, "purpose": "Select ADR storage directory."},
 				{"name": "--spec-dir", "default": defaultSpecDir, "purpose": "Select SPEC storage directory."},
+				{"name": "--domain-dir", "default": defaultDomainDir, "purpose": "Select domain entry storage directory."},
 				{"name": "--format", "default": "json", "purpose": "Choose json, text, or list-only context output."},
 				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
 			},
 		},
-		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR and SPEC directories are ready.", Safety: "read-only"}},
+		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR, SPEC, and domain directories are ready.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
@@ -205,22 +214,26 @@ func supportsContextFormat(args []string) bool {
 	if args[0] == "list" {
 		return true
 	}
-	return len(args) > 1 && (args[0] == KindADR || args[0] == KindSPEC) && args[1] == "list"
+	return len(args) > 1 && isKind(args[0]) && args[1] == "list"
 }
 
 func requestedCommand(args []string) string {
 	if len(args) == 0 {
 		return "canon"
 	}
-	if len(args) > 1 && (args[0] == KindADR || args[0] == KindSPEC) {
+	if len(args) > 1 && isKind(args[0]) {
 		return args[0] + " " + args[1]
 	}
 	return args[0]
 }
 
+func isKind(value string) bool {
+	return value == KindADR || value == KindSPEC || value == KindDomain
+}
+
 func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 	checks := []Diagnostic{}
-	for _, store := range []Store{repo.ADR, repo.Spec} {
+	for _, store := range []Store{repo.ADR, repo.Spec, repo.Domain} {
 		label := store.Kind
 		if !store.Exists() {
 			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon %s init --dry-run`, then `canon %s init`.", label, label)})
@@ -236,8 +249,17 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		}
 		checks = append(checks, Diagnostic{Name: label + "_parse", Status: "ok", Message: fmt.Sprintf("%d %s files parsed", len(adrs), label)})
 	}
-	anyMissing := !repo.ADR.Exists() || !repo.Spec.Exists()
-	if anyMissing {
+	if repo.Domain.Exists() {
+		checks = append(checks, domainIntegrityChecks(repo)...)
+	}
+	anyWarning := false
+	for _, check := range checks {
+		if check.Status == "warning" {
+			anyWarning = true
+			break
+		}
+	}
+	if anyWarning {
 		writeEnvelope(stdout, Envelope{
 			Command: "doctor",
 			Status:  "warning",
@@ -245,6 +267,7 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 			NextActions: []NextAction{
 				{Command: "canon adr init --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
 				{Command: "canon spec init --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
+				{Command: "canon domain init --dry-run", Description: "Preview creating the domain directory.", Safety: "preview"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -253,12 +276,115 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		Command: "doctor",
 		Data:    map[string]any{"diagnostics": checks},
 		NextActions: []NextAction{
-			{Command: "canon list", Description: "Inspect ADR and SPEC inventory.", Safety: "read-only"},
+			{Command: "canon list", Description: "Inspect ADR, SPEC, and domain entry inventory.", Safety: "read-only"},
 			{Command: `canon adr new --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
 			{Command: `canon spec new --title "..." --dry-run`, Description: "Preview creating a new SPEC.", Safety: "preview"},
+			{Command: `canon domain new --title "..." --dry-run`, Description: "Preview creating a new domain entry.", Safety: "preview"},
 		},
 	}, opts.Format)
 	return exitOK
+}
+
+var (
+	// domainIDRefPattern matches textual references like DM-0001.
+	domainIDRefPattern = regexp.MustCompile(`\bDM-(\d{4})\b`)
+	// domainSiblingLinkPattern matches relative markdown links between domain
+	// entry files, e.g. [SPEC](0003-spec.md).
+	domainSiblingLinkPattern = regexp.MustCompile(`\]\((\d{4})-[^)]*\.md\)`)
+	// domainCrossKindLinkPattern matches markdown links from ADR/SPEC files
+	// into the domain directory, e.g. [ADR](../domain/0001-adr.md).
+	domainCrossKindLinkPattern = regexp.MustCompile(`\]\(\.\./domain/(\d{4})-[^)]*\.md\)`)
+)
+
+// domainIntegrityChecks reports content-level findings about the domain
+// model: duplicate accepted titles (two live truths for one concept) and
+// references from live documents to superseded or deprecated entries.
+func domainIntegrityChecks(repo Repo) []Diagnostic {
+	entries, err := repo.Domain.List()
+	if err != nil {
+		return nil
+	}
+	checks := []Diagnostic{}
+
+	byTitle := map[string][]ADR{}
+	for _, entry := range entries {
+		if entry.Status != "accepted" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(entry.Title))
+		byTitle[key] = append(byTitle[key], entry)
+	}
+	titles := make([]string, 0, len(byTitle))
+	for title := range byTitle {
+		titles = append(titles, title)
+	}
+	sort.Strings(titles)
+	for _, title := range titles {
+		group := byTitle[title]
+		if len(group) < 2 {
+			continue
+		}
+		ids := make([]string, 0, len(group))
+		for _, entry := range group {
+			ids = append(ids, entry.ID)
+		}
+		checks = append(checks, Diagnostic{
+			Name:         "domain_duplicate_title",
+			Status:       "warning",
+			Message:      fmt.Sprintf("multiple accepted domain entries titled %q: %s", group[0].Title, strings.Join(ids, ", ")),
+			SuggestedFix: fmt.Sprintf("Deprecate or supersede all but one, e.g. `canon deprecate --id %s --reason \"Duplicate of %s\" --dry-run`.", ids[1], ids[0]),
+		})
+	}
+
+	byID := map[string]ADR{}
+	for _, entry := range entries {
+		byID[entry.ID] = entry
+	}
+	docs, err := repo.All()
+	if err != nil {
+		return checks
+	}
+	for _, doc := range docs {
+		if doc.Status == "superseded" || doc.Status == "deprecated" || doc.Status == "rejected" {
+			continue
+		}
+		seen := map[string]bool{}
+		var refs []string
+		for _, match := range domainIDRefPattern.FindAllStringSubmatch(doc.Content, -1) {
+			refs = append(refs, "DM-"+match[1])
+		}
+		linkPattern := domainCrossKindLinkPattern
+		if doc.Kind == KindDomain {
+			linkPattern = domainSiblingLinkPattern
+		}
+		for _, match := range linkPattern.FindAllStringSubmatch(doc.Content, -1) {
+			refs = append(refs, "DM-"+match[1])
+		}
+		for _, refID := range refs {
+			if refID == doc.ID || seen[refID] {
+				continue
+			}
+			seen[refID] = true
+			target, ok := byID[refID]
+			if !ok {
+				continue
+			}
+			if target.Status != "superseded" && target.Status != "deprecated" {
+				continue
+			}
+			fix := fmt.Sprintf("Remove the reference from %s or restore %s.", doc.ID, refID)
+			if target.Status == "superseded" && target.SupersededBy != "" {
+				fix = fmt.Sprintf("Update the reference in %s to the successor %s.", doc.ID, target.SupersededBy)
+			}
+			checks = append(checks, Diagnostic{
+				Name:         "domain_dead_reference",
+				Status:       "warning",
+				Message:      fmt.Sprintf("%s references %s (%s), which is %s", doc.ID, refID, target.Title, target.Status),
+				SuggestedFix: fix,
+			})
+		}
+	}
+	return checks
 }
 
 func runInit(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
@@ -312,6 +438,9 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	requirements := fs.String("requirements", "", "requirements section (spec)")
 	constraints := fs.String("constraints", "", "constraints section (spec)")
 	acceptance := fs.String("acceptance", "", "acceptance criteria section (spec)")
+	definition := fs.String("definition", "", "definition section (domain)")
+	avoid := fs.String("avoid", "", `avoided terms as "term: reason; term: reason" (domain)`)
+	relationships := fs.String("relationships", "", "relationships section (domain)")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
 	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
@@ -336,7 +465,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	}
 	path := filepath.Join(store.Dir, fmt.Sprintf("%04d-%s.md", next, slugify(*title)))
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "write_file", Path: path, Description: fmt.Sprintf("Create new %s markdown file.", kind)}}}
-	sections := newSections(kind, *context, *decision, *consequences, *requirements, *constraints, *acceptance)
+	sections := newSections(kind, *context, *decision, *consequences, *requirements, *constraints, *acceptance, *definition, *avoid, *relationships)
 	if *dryRun {
 		writeEnvelope(stdout, Envelope{
 			Command: command,
@@ -347,7 +476,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
-				{Command: strings.Join(append([]string{"canon", kind, "new", "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kind, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
+				{Command: strings.Join(append([]string{"canon", kind, "new", "--title", quoteForNextAction(*title), "--status", statusValue}, newDryRunFreeArgs(kind, *tags, *context, *decision, *consequences, *requirements, *constraints, *acceptance, *definition, *avoid, *relationships)...), " "), Description: "Apply this document creation plan.", Safety: "write"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -369,26 +498,32 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	return exitOK
 }
 
-func newSections(kind, context, decision, consequences, requirements, constraints, acceptance string) map[string]string {
-	sections := map[string]string{"context": context}
+func newSections(kind, context, decision, consequences, requirements, constraints, acceptance, definition, avoid, relationships string) map[string]string {
+	sections := map[string]string{}
 	switch kind {
 	case KindSPEC:
+		sections["context"] = context
 		sections["requirements"] = requirements
 		sections["constraints"] = constraints
 		sections["acceptance"] = acceptance
+	case KindDomain:
+		sections["definition"] = definition
+		sections["avoid"] = avoid
+		sections["relationships"] = relationships
 	default:
+		sections["context"] = context
 		sections["decision"] = decision
 		sections["consequences"] = consequences
 	}
 	return sections
 }
 
-func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements, constraints, acceptance string) []string {
+func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements, constraints, acceptance, definition, avoid, relationships string) []string {
 	var args []string
 	if strings.TrimSpace(tags) != "" {
 		args = append(args, "--tags", quoteForNextAction(tags))
 	}
-	if strings.TrimSpace(context) != "" {
+	if strings.TrimSpace(context) != "" && kind != KindDomain {
 		args = append(args, "--context", quoteForNextAction(context))
 	}
 	switch kind {
@@ -402,6 +537,16 @@ func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements
 		if strings.TrimSpace(acceptance) != "" {
 			args = append(args, "--acceptance", quoteForNextAction(acceptance))
 		}
+	case KindDomain:
+		if strings.TrimSpace(definition) != "" {
+			args = append(args, "--definition", quoteForNextAction(definition))
+		}
+		if strings.TrimSpace(avoid) != "" {
+			args = append(args, "--avoid", quoteForNextAction(avoid))
+		}
+		if strings.TrimSpace(relationships) != "" {
+			args = append(args, "--relationships", quoteForNextAction(relationships))
+		}
 	default:
 		if strings.TrimSpace(decision) != "" {
 			args = append(args, "--decision", quoteForNextAction(decision))
@@ -413,8 +558,9 @@ func newDryRunFreeArgs(kind, tags, context, decision, consequences, requirements
 	return args
 }
 
-// runList lists document summaries. An empty kind lists both ADRs and SPECs;
-// a kind from `canon adr list` or `canon spec list` scopes the listing.
+// runList lists document summaries. An empty kind lists ADRs, SPECs, and
+// domain entries together; a kind from `canon adr list`, `canon spec list`,
+// or `canon domain list` scopes the listing.
 func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
 	command := "list"
 	if kind != "" {
@@ -442,7 +588,7 @@ func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 		},
 		NextActions: []NextAction{
 			{Command: "canon show --id ADR-0001", Description: "Inspect a selected id from the result set.", Safety: "read-only"},
-			{Command: "canon search --query text", Description: "Search ADR and SPEC content when the list is too broad.", Safety: "read-only"},
+			{Command: "canon search --query text", Description: "Search ADR, SPEC, and domain entry content when the list is too broad.", Safety: "read-only"},
 		},
 	}, opts.Format)
 	return exitOK
@@ -463,7 +609,7 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	}
 	store, err := repo.StoreForID(*id)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("show", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("show", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -480,8 +626,9 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	return exitOK
 }
 
-// runSearch searches documents. An empty kind searches both ADRs and SPECs;
-// a kind from `canon adr search` or `canon spec search` scopes the search.
+// runSearch searches documents. An empty kind searches ADRs, SPECs, and
+// domain entries; a kind from `canon adr search`, `canon spec search`, or
+// `canon domain search` scopes the search.
 func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
 	command := "search"
 	if kind != "" {
@@ -545,7 +692,7 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	}
 	store, err := repo.StoreForID(*id)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -591,7 +738,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	}
 	store, err := repo.StoreForID(*id)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -600,7 +747,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	}
 	byKind, byID, err := normalizeID(*by)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_by_id", "usage", err.Error(), "Use an id like ADR-0002 or SPEC-0002."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_by_id", "usage", err.Error(), "Use an id like ADR-0002, SPEC-0002, or DM-0002."), opts.Format)
 		return exitUsage
 	}
 	if adr.ID == byID {
@@ -617,7 +764,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		return handleReadError(stdout, opts, "supersede", err)
 	}
 	if adr.Kind != byADR.Kind {
-		writeEnvelope(stdout, errorEnvelope("supersede", "cross_kind_supersede", "state", fmt.Sprintf("%s (%s) cannot be superseded by %s (%s)", adr.ID, adr.Kind, byADR.ID, byADR.Kind), "Supersede within the same kind: replace an ADR with an ADR or a SPEC with a SPEC."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("supersede", "cross_kind_supersede", "state", fmt.Sprintf("%s (%s) cannot be superseded by %s (%s)", adr.ID, adr.Kind, byADR.ID, byADR.Kind), "Supersede within the same kind: replace an ADR with an ADR, a SPEC with a SPEC, or a domain entry with a domain entry."), opts.Format)
 		return exitState
 	}
 	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{
@@ -673,7 +820,7 @@ func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	}
 	store, err := repo.StoreForID(*id)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("deprecate", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("deprecate", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -720,7 +867,7 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	}
 	store, err := repo.StoreForID(*id)
 	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("append", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001 or SPEC-0001."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope("append", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
 	adr, err := store.Read(*id)
@@ -964,7 +1111,7 @@ func usageError(command, message string) Envelope {
 
 func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err error) int {
 	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon adr init` or `canon spec init`."), opts.Format)
+		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon adr init`, `canon spec init`, or `canon domain init`."), opts.Format)
 		return exitNotFound
 	}
 	writeEnvelope(stdout, errorEnvelope(command, "adr_read_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)

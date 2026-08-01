@@ -58,6 +58,36 @@ canon show --id ADR-0002
 Use ids from command output instead of reconstructing paths. Paths can change;
 ADR ids are the composable selectors.
 
+## Planning changes
+
+The repository-local `project-planning` skill applies this discovery workflow
+whenever an agent is asked for a plan, design, implementation approach, scope,
+or impact analysis. It keeps planning read-only and starts with current document
+status:
+
+```sh
+go run ./cmd/canon doctor
+go run ./cmd/canon --format context list --status accepted
+go run ./cmd/canon --format context list --status proposed
+```
+
+Accepted ADRs and SPECs constrain the plan. Proposed documents are useful input
+but are not binding. Search by task terminology and use `show` to read only the
+records that actually affect the work. The skill lives at
+`.agents/skills/project-planning/SKILL.md`.
+
+Before and during planning, grilling, or any other terminology-heavy
+exploration, also consult the domain model so the plan uses canonical language:
+
+```sh
+canon --format context domain list --status accepted
+canon domain search --query "cancellation"
+```
+
+The domain model is the single source of truth for what things mean. When a
+session resolves a new term or sharpens an old one, update the domain model in
+the same session rather than batching it for later.
+
 ## Creating a decision
 
 ```sh
@@ -77,9 +107,27 @@ canon spec new --title "Local query index" --tags "storage,query" --context "Age
 canon show --id SPEC-0001
 ```
 
+## Defining a concept
+
+Domain entries define one canonical concept each. Always search the domain
+model first; sharpen an existing entry instead of creating a parallel one.
+
+```sh
+canon domain search --query "decision"
+canon domain new --title "ADR" --status proposed --dry-run
+canon domain new --title "ADR" --tags "glossary" --definition "A dated, narrowly-scoped architecture commitment." --avoid "design doc: too broad; ticket: tracks work, not decisions" --relationships "See [SPEC](0002-spec.md)."
+canon show --id DM-0001
+```
+
+Lifecycle semantics for entries: `accept` canonizes the term; `supersede` is
+for redefinitions (a new entry replaces the old meaning); renames retitle the
+same entry in place plus a `canon append` history note; `deprecate` retires a
+concept as a tombstone. See `docs/domain-format.md` for the full format.
+
 ## Accepting a decision
 
-Use `accept` to record that a proposed ADR or SPEC has been approved.
+Use `accept` to record that a proposed ADR, SPEC, or domain entry has been
+approved.
 
 ```sh
 canon show --id ADR-0001
@@ -89,7 +137,8 @@ canon accept --id ADR-0001 --reason "Approved by the team."
 
 ## Rejecting a decision
 
-Use `reject` to record that an ADR or SPEC was turned down, without removing it.
+Use `reject` to record that an ADR, SPEC, or domain entry was turned down,
+without removing it.
 
 ```sh
 canon show --id ADR-0001

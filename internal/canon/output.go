@@ -56,6 +56,8 @@ func writeContext(out io.Writer, env Envelope) {
 		heading = "Architecture Decision Records"
 	case "spec list":
 		heading = "Specifications"
+	case "domain list":
+		heading = "Domain Model"
 	}
 	fmt.Fprintf(out, "## %s\n\n", heading)
 	if len(data.ADRs) == 0 {

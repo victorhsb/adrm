@@ -3,15 +3,19 @@ package canon
 const (
 	SchemaVersion = "canon.v1"
 
-	defaultADRDir  = "docs/adr"
-	defaultSpecDir = "docs/spec"
+	defaultADRDir    = "docs/adr"
+	defaultSpecDir   = "docs/spec"
+	defaultDomainDir = "docs/domain"
 
-	KindADR  = "adr"
-	KindSPEC = "spec"
+	KindADR    = "adr"
+	KindSPEC   = "spec"
+	KindDomain = "domain"
 
-	// PrefixADR and PrefixSPEC are the stable id prefixes used in filenames and selectors.
-	PrefixADR  = "ADR-"
-	PrefixSPEC = "SPEC-"
+	// PrefixADR, PrefixSPEC, and PrefixDomain are the stable id prefixes used
+	// in filenames and selectors.
+	PrefixADR    = "ADR-"
+	PrefixSPEC   = "SPEC-"
+	PrefixDomain = "DM-"
 )
 
 type Envelope struct {
@@ -73,12 +77,14 @@ type OpPlan struct {
 }
 
 type GlobalOptions struct {
-	ADRDir  string
-	SpecDir string
-	Format  string
+	ADRDir    string
+	SpecDir   string
+	DomainDir string
+	Format    string
 }
 
 // Document is an alias for ADR. The CLI manages multiple kinds of documents
-// (ADR and SPEC today); they share the same parseable shape, so ADR remains
-// the backing struct while Document is the preferred name in new code.
+// (ADR, SPEC, and domain entries today); they share the same parseable shape,
+// so ADR remains the backing struct while Document is the preferred name in
+// new code.
 type Document = ADR

@@ -6,8 +6,8 @@ import (
 )
 
 func TestVersionBumped(t *testing.T) {
-	if Version != "6" {
-		t.Fatalf("expected skill version 6, got %q", Version)
+	if Version != "8" {
+		t.Fatalf("expected skill version 8, got %q", Version)
 	}
 }
 
@@ -49,6 +49,7 @@ func TestContentContainsADRGuidanceSection(t *testing.T) {
 		"ticket",
 		"changelog entry",
 		"bundle of unrelated decisions",
+		"project process, agent workflow, or skill instruction",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("skill content missing %q:\n%s", want, content)

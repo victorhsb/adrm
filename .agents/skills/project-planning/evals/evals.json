@@ -1,0 +1,23 @@
+{
+  "skill_name": "project-planning",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Plan the implementation of the corpus validation command described by the current project documents. Do not make any changes yet; I want an implementation-ready plan that another agent could execute.",
+      "expected_output": "A repository-grounded plan that finds ADR-0010 and SPEC-0001, clearly labels both as proposed rather than binding, relates the work to accepted CLI constraints, identifies likely implementation and documentation locations, and provides concrete verification commands.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Think through a plan for allowing --format context on search commands as well as list commands. I care about keeping the output compact for prompt injection, but do not implement it yet.",
+      "expected_output": "A plan that identifies ADR-0011 as the governing accepted decision, recognizes that extending context to search is an explicit output-contract decision, inspects current search and rendering code, and covers deterministic output, errors, tests, registry metadata, and documentation.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Please plan a small documentation-only improvement: add clearer examples showing how agents should combine canon search and canon show when investigating a decision. No code behavior should change.",
+      "expected_output": "A focused documentation plan that inspects existing workflow and command docs, references relevant decisions without inventing a new ADR, preserves JSON-first guidance, and proposes proportionate documentation verification rather than implementation work.",
+      "files": []
+    }
+  ]
+}

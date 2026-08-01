@@ -1,8 +1,9 @@
 # ADR File Format
 
-`canon` stores ADRs as markdown files with a small front matter block. ADRs and
-SPECs share the same parseable shape; the `kind` front-matter field selects the
-document type. See `docs/spec-format.md` for the SPEC body.
+`canon` stores ADRs as markdown files with a small front matter block. ADRs,
+SPECs, and domain entries share the same parseable shape; the `kind`
+front-matter field selects the document type. See `docs/spec-format.md` for
+the SPEC body and `docs/domain-format.md` for the domain entry body.
 
 Default ADR directory:
 

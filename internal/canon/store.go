@@ -24,6 +24,8 @@ func NewStore(dir, kind string) Store {
 		switch kind {
 		case KindSPEC:
 			dir = defaultSpecDir
+		case KindDomain:
+			dir = defaultDomainDir
 		default:
 			dir = defaultADRDir
 		}
@@ -140,6 +142,8 @@ func (s Store) WriteNew(title, status string, tags []string, sections map[string
 	switch s.Kind {
 	case KindSPEC:
 		body = renderSPEC(adr, sections)
+	case KindDomain:
+		body = renderDomain(adr, sections)
 	default:
 		body = renderADR(adr, sections)
 	}
@@ -260,6 +264,61 @@ func renderSPEC(adr ADR, sections map[string]string) string {
 `, adr.ID, adr.Title, adr.Status, defaultText(context, "TBD"), defaultText(requirements, "TBD"), defaultText(constraints, "TBD"), defaultText(acceptance, "TBD"))
 }
 
+func renderDomain(adr ADR, sections map[string]string) string {
+	definition := sections["definition"]
+	avoid := renderAvoidList(sections["avoid"])
+	relationships := sections["relationships"]
+	return renderFrontMatter(adr) + fmt.Sprintf(`# %s: %s
+
+## Status
+
+%s
+
+## Definition
+
+%s
+
+## Avoid
+
+%s
+
+## Relationships
+
+%s
+`, adr.ID, adr.Title, adr.Status, defaultText(definition, "TBD"), avoid, defaultText(relationships, "TBD"))
+}
+
+// renderAvoidList renders the --avoid flag value as a markdown bullet list.
+// Entries are separated by semicolons; each entry is either "term" or
+// "term: reason", rendered as "- **term** — reason" so every avoided term
+// carries the reason it is not canonical.
+func renderAvoidList(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "TBD"
+	}
+	var b strings.Builder
+	for _, entry := range strings.Split(value, ";") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		term, reason, hasReason := strings.Cut(entry, ":")
+		term = strings.TrimSpace(term)
+		reason = strings.TrimSpace(reason)
+		if hasReason && reason != "" {
+			fmt.Fprintf(&b, "- **%s** — %s\n", term, reason)
+			continue
+		}
+		fmt.Fprintf(&b, "- **%s**\n", term)
+	}
+	out := strings.TrimRight(b.String(), "\n")
+	if out == "" {
+		return "TBD"
+	}
+	return out
+}
+
 func renderExisting(adr ADR) string {
 	content := adr.Content
 	if !strings.HasPrefix(content, "# ") {
@@ -289,7 +348,7 @@ deprecated_by: %s
 func normalizeID(id string) (kind, normalized string, err error) {
 	id = strings.TrimSpace(strings.ToUpper(id))
 	id = strings.TrimPrefix(id, "#")
-	for _, k := range []string{KindADR, KindSPEC} {
+	for _, k := range []string{KindADR, KindSPEC, KindDomain} {
 		prefix := kindPrefix(k)
 		if strings.HasPrefix(id, prefix) {
 			num, parseErr := strconv.Atoi(strings.TrimPrefix(id, prefix))
@@ -311,7 +370,7 @@ func numberFromID(id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, k := range []string{KindADR, KindSPEC} {
+	for _, k := range []string{KindADR, KindSPEC, KindDomain} {
 		prefix := kindPrefix(k)
 		if strings.HasPrefix(normalized, prefix) {
 			return strconv.Atoi(strings.TrimPrefix(normalized, prefix))
@@ -328,6 +387,8 @@ func kindPrefix(kind string) string {
 	switch kind {
 	case KindSPEC:
 		return PrefixSPEC
+	case KindDomain:
+		return PrefixDomain
 	default:
 		return PrefixADR
 	}
@@ -338,6 +399,8 @@ func kindFromID(id string) string {
 	switch {
 	case strings.HasPrefix(upper, PrefixSPEC):
 		return KindSPEC
+	case strings.HasPrefix(upper, PrefixDomain):
+		return KindDomain
 	case strings.HasPrefix(upper, PrefixADR):
 		return KindADR
 	default:
@@ -348,7 +411,7 @@ func kindFromID(id string) string {
 func normalizeKind(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case KindADR, KindSPEC:
+	case KindADR, KindSPEC, KindDomain:
 		return value
 	default:
 		return ""

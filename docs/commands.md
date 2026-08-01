@@ -4,13 +4,13 @@
 Global flags must appear before the command.
 
 ```sh
-canon --adr-dir docs/adr --spec-dir docs/spec --format json list
+canon --adr-dir docs/adr --spec-dir docs/spec --domain-dir docs/domain --format json list
 ```
 
 Commands that create or scope documents by kind are prefixed with the kind:
-`canon adr new`, `canon spec list`, and so on. Commands that operate on one
-document take `--id` and route by the id prefix (`ADR-` or `SPEC-`), so they
-need no kind prefix.
+`canon adr new`, `canon spec list`, `canon domain new`, and so on. Commands
+that operate on one document take `--id` and route by the id prefix (`ADR-`,
+`SPEC-`, or `DM-`), so they need no kind prefix.
 
 ## Output envelope
 
@@ -42,12 +42,13 @@ Fields:
 
 - `--adr-dir`: ADR storage directory. Default: `docs/adr`.
 - `--spec-dir`: SPEC storage directory. Default: `docs/spec`.
+- `--domain-dir`: domain entry storage directory. Default: `docs/domain`.
 - `--format`: output format. Values: `json`, `text`, `context`. Default: `json`.
 - `-t`: shorthand for `--format text`.
 
-The `context` format is supported only by `list`, `adr list`, and `spec list`.
-It emits a bounded Markdown projection for prompt injection. Other commands
-reject it with `unsupported_context_format`.
+The `context` format is supported only by `list`, `adr list`, `spec list`,
+and `domain list`. It emits a bounded Markdown projection for prompt
+injection. Other commands reject it with `unsupported_context_format`.
 
 ## `commands`
 
@@ -64,13 +65,20 @@ Safety: read-only.
 
 ## `doctor`
 
-Checks whether ADR and SPEC storage exists and whether files can be parsed.
+Checks whether ADR, SPEC, and domain storage exists and whether files can be
+parsed. It also runs content-level integrity checks on the domain model:
+
+- `domain_duplicate_title`: two accepted domain entries share a title.
+  Deprecate or supersede all but one so each concept has a single truth.
+- `domain_dead_reference`: a live document references (by `DM-` id or markdown
+  link) a domain entry that is superseded or deprecated.
 
 ```sh
 canon doctor
 ```
 
-Safety: read-only. Reports a warning when either directory is missing.
+Safety: read-only. Reports a warning when any directory is missing or any
+integrity check fails.
 
 Common next action when missing storage:
 
@@ -79,17 +87,21 @@ canon adr init --dry-run
 canon adr init
 canon spec init --dry-run
 canon spec init
+canon domain init --dry-run
+canon domain init
 ```
 
-## `adr init` / `spec init`
+## `adr init` / `spec init` / `domain init`
 
-Creates the ADR or SPEC directory if it does not exist.
+Creates the ADR, SPEC, or domain directory if it does not exist.
 
 ```sh
 canon adr init --dry-run
 canon adr init
 canon spec init --dry-run
 canon spec init
+canon domain init --dry-run
+canon domain init
 ```
 
 Flags:
@@ -143,16 +155,44 @@ Flags:
 
 Safety: mutating. Supports `--dry-run`.
 
-## `list` / `adr list` / `spec list`
+## `domain new`
 
-Lists ADR and SPEC summaries in stable order. Plain `canon list` covers both
-kinds; the prefixed forms scope the listing to one kind.
+Creates a new domain entry markdown file. Domain entries define one canonical
+concept each: what it means, which terms to avoid (and why), and how it
+relates to other concepts.
+
+```sh
+canon domain new --title "ADR" --status proposed --dry-run
+canon domain new --title "ADR" --tags "glossary" --definition "A dated, narrowly-scoped architecture commitment." --avoid "design doc: too broad; ticket: tracks work, not decisions" --relationships "See [SPEC](0002-spec.md)."
+```
+
+Flags:
+
+- `--title`: required. The canonical term being defined.
+- `--status`: optional. Default: `proposed`.
+- `--tags`: comma-separated list.
+- `--definition`: markdown text for the Definition section. Definitions carry
+  no implementation details.
+- `--avoid`: avoided terms as `term: reason` pairs separated by semicolons,
+  rendered as a bullet list. Reasons explain why each term is not canonical.
+- `--relationships`: markdown text for the Relationships section. Reference
+  other entries with relative markdown links, e.g. `[SPEC](0002-spec.md)`.
+- `--dry-run`: preview without writing.
+
+Safety: mutating. Supports `--dry-run`.
+
+## `list` / `adr list` / `spec list` / `domain list`
+
+Lists ADR, SPEC, and domain entry summaries in stable order. Plain
+`canon list` covers all kinds; the prefixed forms scope the listing to one
+kind.
 
 ```sh
 canon list
 canon list --status accepted
 canon adr list --status accepted
 canon spec list --tag storage
+canon domain list --status accepted
 canon --format context adr list --status accepted
 ```
 
@@ -178,27 +218,30 @@ Safety: read-only.
 
 ## `show`
 
-Returns one ADR or SPEC with metadata and markdown content. The id prefix
-(`ADR-` or `SPEC-`) selects the document; bare numbers resolve to ADR.
+Returns one ADR, SPEC, or domain entry with metadata and markdown content.
+The id prefix (`ADR-`, `SPEC-`, or `DM-`) selects the document; bare numbers
+resolve to ADR.
 
 ```sh
 canon show --id ADR-0001
 canon show --id SPEC-0001
+canon show --id DM-0001
 canon show --id 1
 ```
 
 Safety: read-only.
 
-## `search` / `adr search` / `spec search`
+## `search` / `adr search` / `spec search` / `domain search`
 
-Searches id, title, status, tags, kind, and markdown content across ADRs and
-SPECs. Plain `canon search` covers both kinds; the prefixed forms scope the
-search to one kind.
+Searches id, title, status, tags, kind, and markdown content across ADRs,
+SPECs, and domain entries. Plain `canon search` covers all kinds; the
+prefixed forms scope the search to one kind.
 
 ```sh
 canon search --query "database"
 canon search database
 canon spec search --query requirements
+canon domain search --query "cancellation"
 canon search --status deprecated
 canon adr search --tag storage --query local
 ```
@@ -213,17 +256,18 @@ Safety: read-only.
 
 ## `accept`
 
-Marks an ADR or SPEC as accepted.
+Marks an ADR, SPEC, or domain entry as accepted.
 
 ```sh
 canon accept --id ADR-0001 --reason "Approved by the team." --dry-run
 canon accept --id ADR-0001 --reason "Approved by the team."
 canon accept --id SPEC-0001 --reason "Requirements approved." --dry-run
+canon accept --id DM-0001 --reason "Term canonized." --dry-run
 ```
 
 Flags:
 
-- `--id`: required. ADR or SPEC id to accept.
+- `--id`: required. ADR, SPEC, or domain entry id to accept.
 - `--reason`: optional. Reason recorded in the history section.
 - `--dry-run`: preview without writing.
 
@@ -237,7 +281,9 @@ Safety: mutating. Supports `--dry-run`.
 
 ## `reject`
 
-Marks an ADR or SPEC as rejected.
+Marks an ADR, SPEC, or domain entry as rejected. For domain entries, a
+proposed entry that does not survive review is usually deleted instead of
+rejected; `reject` remains available when a refusal should stay on record.
 
 ```sh
 canon reject --id ADR-0001 --reason "Chose a different approach." --dry-run
@@ -246,7 +292,7 @@ canon reject --id ADR-0001 --reason "Chose a different approach."
 
 Flags:
 
-- `--id`: required. ADR or SPEC id to reject.
+- `--id`: required. ADR, SPEC, or domain entry id to reject.
 - `--reason`: optional. Reason recorded in the history section.
 - `--dry-run`: preview without writing.
 
@@ -261,12 +307,16 @@ Safety: mutating. Supports `--dry-run`.
 ## `supersede`
 
 Marks one document as superseded by another existing document of the same
-kind. Cross-kind supersede (an ADR by a SPEC, or vice versa) is rejected.
+kind. Cross-kind supersede (an ADR by a SPEC, a domain entry by an ADR, and
+so on) is rejected. For domain entries, supersede means *redefinition*;
+renaming a concept retitles the same entry in place instead (title is
+content, not lifecycle metadata) with a `canon append` history note.
 
 ```sh
 canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design." --dry-run
 canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current design."
 canon supersede --id SPEC-0001 --by SPEC-0002 --reason "Requirements split." --dry-run
+canon supersede --id DM-0001 --by DM-0002 --reason "Definition sharpened." --dry-run
 ```
 
 Effects:
@@ -286,7 +336,10 @@ Errors:
 
 ## `deprecate`
 
-Marks an ADR or SPEC as deprecated without naming a replacement.
+Marks an ADR, SPEC, or domain entry as deprecated without naming a
+replacement. A deprecated domain entry is a tombstone: the concept is leaving
+the domain, but the entry stays so historical references still resolve and
+future implementations know to intentionally ignore it.
 
 ```sh
 canon deprecate --id ADR-0003 --reason "The component was removed." --dry-run
@@ -305,7 +358,7 @@ Safety: mutating. Supports `--dry-run`.
 
 ## `append`
 
-Appends a dated appendix section to an ADR or SPEC.
+Appends a dated appendix section to an ADR, SPEC, or domain entry.
 
 ```sh
 canon append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index." --dry-run
