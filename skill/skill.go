@@ -9,7 +9,7 @@ import (
 
 const (
 	Name              = "canon"
-	Version           = "8"
+	Version           = "9"
 	FileName          = "SKILL.md"
 	DefaultInstallDir = ".agents/skills/canon"
 )
@@ -85,7 +85,7 @@ Use canon to manage Architecture Decision Records without guessing repository st
 ## Operating rules
 
 1. Start with `+"`canon commands`"+` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `+"`canon doctor`"+` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `+"`canon adr init --dry-run`"+`, `+"`canon spec init --dry-run`"+`, or `+"`canon domain init --dry-run`"+` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries.
+2. Run `+"`canon doctor`"+` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `+"`canon adr init --dry-run`"+`, `+"`canon spec init --dry-run`"+`, or `+"`canon domain init --dry-run`"+` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `+"`canon validate`"+` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
 3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `+"`canon --format context adr list --status accepted`"+` emits concise Markdown; use context format only with list commands. Every JSON response has `+"`schema_version`"+`, `+"`status`"+`, `+"`data`"+`, and optional `+"`error`"+` / `+"`next_actions`"+`.
 4. For every mutating command, run the same command with `+"`--dry-run`"+` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `+"`No changes were made.`"+` in warnings.
 5. Use `+"`canon list`"+` (all kinds), `+"`canon adr list`"+` / `+"`canon spec list`"+` / `+"`canon domain list`"+`, `+"`canon search --query ...`"+`, and `+"`canon show --id ...`"+` to gather context before changing a document.

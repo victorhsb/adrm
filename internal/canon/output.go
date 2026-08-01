@@ -100,6 +100,8 @@ func renderDataText(out io.Writer, command string, data any) {
 		renderCommandsText(out, payload)
 	case "doctor":
 		renderDoctorText(out, payload)
+	case "validate", "adr validate", "spec validate", "domain validate":
+		renderValidateText(out, payload)
 	case "list":
 		renderListText(out, payload)
 	case "show":
@@ -166,6 +168,33 @@ func renderDoctorText(out io.Writer, payload map[string]any) {
 	for _, d := range data.Diagnostics {
 		fmt.Fprintf(out, "  %s: %s - %s\n", d.Name, d.Status, d.Message)
 	}
+}
+
+func renderValidateText(out io.Writer, payload map[string]any) {
+	var data struct {
+		Findings []Diagnostic `json:"findings"`
+		Summary  struct {
+			FilesChecked int `json:"files_checked"`
+			Errors       int `json:"errors"`
+			Warnings     int `json:"warnings"`
+		} `json:"summary"`
+	}
+	if !jsonCopy(payload, &data) {
+		return
+	}
+	fmt.Fprintln(out, "findings:")
+	for _, f := range data.Findings {
+		where := f.Path
+		if f.ID != "" {
+			where = strings.TrimSpace(where + " " + f.ID)
+		}
+		if where != "" {
+			fmt.Fprintf(out, "  %s: %s - %s (%s)\n", f.Name, f.Status, f.Message, where)
+			continue
+		}
+		fmt.Fprintf(out, "  %s: %s - %s\n", f.Name, f.Status, f.Message)
+	}
+	fmt.Fprintf(out, "summary: files_checked=%d errors=%d warnings=%d\n", data.Summary.FilesChecked, data.Summary.Errors, data.Summary.Warnings)
 }
 
 func renderListText(out io.Writer, payload map[string]any) {

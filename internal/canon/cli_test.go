@@ -1091,6 +1091,409 @@ func TestDoctorFlagsDeadDomainReferences(t *testing.T) {
 	}
 }
 
+func writeRawDocForTest(t *testing.T, dir, filename, id, status, extraFrontMatter string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	kind := "adr"
+	if strings.HasPrefix(id, "SPEC-") {
+		kind = "spec"
+	}
+	if strings.HasPrefix(id, "DM-") {
+		kind = "domain"
+	}
+	content := fmt.Sprintf(`---
+kind: %s
+id: %s
+title: %s
+status: %s
+date: 2026-07-01
+%s---
+# %s: %s
+
+## Status
+
+%s
+`, kind, id, id, status, extraFrontMatter, id, id, status)
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+	return path
+}
+
+func validateFindings(env map[string]any) []map[string]any {
+	var out []map[string]any
+	for _, raw := range env["data"].(map[string]any)["findings"].([]any) {
+		out = append(out, raw.(map[string]any))
+	}
+	return out
+}
+
+func findingNames(findings []map[string]any) []string {
+	names := []string{}
+	for _, f := range findings {
+		names = append(names, f["name"].(string))
+	}
+	return names
+}
+
+func TestValidateHealthyCorpus(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "adr", "new", "--title", "One")...); code != exitOK {
+		t.Fatalf("adr new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "spec", "new", "--title", "Two")...); code != exitOK {
+		t.Fatalf("spec new code = %d", code)
+	}
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Three")...); code != exitOK {
+		t.Fatalf("domain new code = %d", code)
+	}
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitOK {
+		t.Fatalf("validate code = %d", code)
+	}
+	if env["status"] != "ok" {
+		t.Fatalf("validate status = %v", env["status"])
+	}
+	summary := env["data"].(map[string]any)["summary"].(map[string]any)
+	if summary["files_checked"] != float64(3) || summary["errors"] != float64(0) || summary["warnings"] != float64(0) {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if len(validateFindings(env)) != 0 {
+		t.Fatalf("expected no findings: %#v", env["data"])
+	}
+}
+
+func TestValidateDuplicateID(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	first := writeRawDocForTest(t, adr, "0001-one.md", "ADR-0001", "accepted", "")
+	second := writeRawDocForTest(t, adr, "0001-copy.md", "ADR-0001", "accepted", "")
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	if env["status"] != "error" {
+		t.Fatalf("validate status = %v", env["status"])
+	}
+	var sawDuplicate bool
+	for _, f := range validateFindings(env) {
+		if f["name"] == "duplicate_id" && f["status"] == "error" {
+			sawDuplicate = true
+			message := f["message"].(string)
+			if !strings.Contains(message, first) || !strings.Contains(message, second) {
+				t.Fatalf("duplicate_id finding must name both paths: %#v", f)
+			}
+			if f["suggested_fix"] == "" || f["suggested_fix"] == nil {
+				t.Fatalf("duplicate_id finding missing suggested_fix: %#v", f)
+			}
+		}
+	}
+	if !sawDuplicate {
+		t.Fatalf("missing duplicate_id finding: %#v", env["data"])
+	}
+}
+
+func TestValidateBrokenReference(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-one.md", "ADR-0001", "superseded", "superseded_by: ADR-0009\n")
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	if env["status"] != "error" {
+		t.Fatalf("validate status = %v", env["status"])
+	}
+	var sawBroken bool
+	for _, f := range validateFindings(env) {
+		if f["name"] == "broken_reference" && f["status"] == "error" {
+			sawBroken = true
+			if !strings.Contains(f["message"].(string), "ADR-0009") {
+				t.Fatalf("broken_reference finding missing target id: %#v", f)
+			}
+		}
+	}
+	if !sawBroken {
+		t.Fatalf("missing broken_reference finding: %#v", env["data"])
+	}
+}
+
+func TestValidateMissingSpecDirectoryWarning(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-one.md", "ADR-0001", "accepted", "")
+	if err := os.MkdirAll(domain, 0o755); err != nil {
+		t.Fatalf("mkdir domain: %v", err)
+	}
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitOK {
+		t.Fatalf("validate code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("validate status = %v", env["status"])
+	}
+	names := findingNames(validateFindings(env))
+	if len(names) != 1 || names[0] != "missing_directory" {
+		t.Fatalf("findings = %v", names)
+	}
+	code, env = runKindTest(t, append(dirs, "validate", "--strict")...)
+	if code != exitState {
+		t.Fatalf("validate --strict code = %d", code)
+	}
+	if env["status"] != "warning" {
+		t.Fatalf("validate --strict status = %v", env["status"])
+	}
+}
+
+func TestValidateByIDScopesToOneDocument(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-clean.md", "ADR-0001", "accepted", "")
+	writeRawDocForTest(t, adr, "0002-broken.md", "ADR-0002", "superseded", "superseded_by: ADR-0009\n")
+
+	code, env := runKindTest(t, append(dirs, "validate", "--id", "ADR-0001")...)
+	if code != exitOK {
+		t.Fatalf("validate --id clean code = %d", code)
+	}
+	if env["status"] != "ok" {
+		t.Fatalf("validate --id clean status = %v", env["status"])
+	}
+	summary := env["data"].(map[string]any)["summary"].(map[string]any)
+	if summary["files_checked"] != float64(1) {
+		t.Fatalf("summary = %#v", summary)
+	}
+
+	code, env = runKindTest(t, append(dirs, "validate", "--id", "ADR-0002")...)
+	if code != exitState {
+		t.Fatalf("validate --id broken code = %d", code)
+	}
+	names := findingNames(validateFindings(env))
+	if len(names) != 1 || names[0] != "broken_reference" {
+		t.Fatalf("findings = %v", names)
+	}
+
+	code, _ = runKindTest(t, append(dirs, "validate", "--id", "ADR-0099")...)
+	if code != exitNotFound {
+		t.Fatalf("validate --id missing code = %d", code)
+	}
+	code, _ = runKindTest(t, append(dirs, "validate", "--id", "bogus")...)
+	if code != exitUsage {
+		t.Fatalf("validate --id invalid code = %d", code)
+	}
+	code, _ = runKindTest(t, append(dirs, "adr", "validate", "--id", "ADR-0001")...)
+	if code != exitUsage {
+		t.Fatalf("adr validate --id code = %d", code)
+	}
+}
+
+func TestValidateKindScoped(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-broken.md", "ADR-0001", "superseded", "superseded_by: ADR-0009\n")
+	writeRawDocForTest(t, spec, "0001-fine.md", "SPEC-0001", "accepted", "")
+
+	code, env := runKindTest(t, append(dirs, "adr", "validate")...)
+	if code != exitState {
+		t.Fatalf("adr validate code = %d", code)
+	}
+	names := findingNames(validateFindings(env))
+	if len(names) != 1 || names[0] != "broken_reference" {
+		t.Fatalf("adr validate findings = %v", names)
+	}
+
+	code, env = runKindTest(t, append(dirs, "spec", "validate")...)
+	if code != exitOK {
+		t.Fatalf("spec validate code = %d", code)
+	}
+	if env["status"] != "ok" {
+		t.Fatalf("spec validate status = %v findings = %#v", env["status"], env["data"])
+	}
+}
+
+func TestValidateDomainScoped(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, domain, "0001-fine.md", "DM-0001", "accepted", "")
+	code, env := runKindTest(t, append(dirs, "domain", "validate")...)
+	if code != exitOK {
+		t.Fatalf("domain validate code = %d", code)
+	}
+	if env["status"] != "ok" {
+		t.Fatalf("domain validate status = %v", env["status"])
+	}
+	summary := env["data"].(map[string]any)["summary"].(map[string]any)
+	if summary["files_checked"] != float64(1) {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestValidateMalformedFileDoesNotMaskCorpus(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-one.md", "ADR-0001", "superseded", "")
+	badPath := filepath.Join(adr, "0002-bad.md")
+	if err := os.WriteFile(badPath, []byte("no front matter here\n"), 0o644); err != nil {
+		t.Fatalf("write malformed: %v", err)
+	}
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	var sawMalformed, sawConsistency bool
+	for _, f := range validateFindings(env) {
+		if f["name"] == "malformed_file" && f["status"] == "error" && f["path"] == badPath {
+			sawMalformed = true
+		}
+		// The parseable file is still checked: superseded without
+		// superseded_by is a warning.
+		if f["name"] == "status_reference_inconsistency" && f["id"] == "ADR-0001" {
+			sawConsistency = true
+		}
+	}
+	if !sawMalformed {
+		t.Fatalf("missing malformed_file finding: %#v", env["data"])
+	}
+	if !sawConsistency {
+		t.Fatalf("malformed file masked the rest of the corpus: %#v", env["data"])
+	}
+	summary := env["data"].(map[string]any)["summary"].(map[string]any)
+	if summary["files_checked"] != float64(2) {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestValidateReciprocityViolation(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0001-old.md", "ADR-0001", "superseded", "superseded_by: ADR-0002\n")
+	writeRawDocForTest(t, adr, "0002-new.md", "ADR-0002", "accepted", "")
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	names := findingNames(validateFindings(env))
+	if !contains(names, "reciprocity_violation") {
+		t.Fatalf("findings = %v", names)
+	}
+}
+
+func TestValidateKindAndDirectoryCoherence(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	// SPEC-prefixed id living in the ADR directory.
+	writeRawDocForTest(t, adr, "0001-misplaced.md", "SPEC-0001", "accepted", "")
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	names := findingNames(validateFindings(env))
+	if !contains(names, "directory_mismatch") {
+		t.Fatalf("findings = %v", names)
+	}
+}
+
+func TestValidateInvalidStatusAndMalformedDate(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	path := writeRawDocForTest(t, adr, "0001-one.md", "ADR-0001", "accepted", "")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read doc: %v", err)
+	}
+	mutated := strings.Replace(string(content), "status: accepted", "status: someday", 1)
+	mutated = strings.Replace(mutated, "date: 2026-07-01", "date: last tuesday", 1)
+	mutated = strings.Replace(mutated, "## Status\n\naccepted", "## Status\n\nsomeday", 1)
+	if err := os.WriteFile(path, []byte(mutated), 0o644); err != nil {
+		t.Fatalf("write doc: %v", err)
+	}
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	names := findingNames(validateFindings(env))
+	if !contains(names, "invalid_status") || !contains(names, "malformed_date") {
+		t.Fatalf("findings = %v", names)
+	}
+	for _, f := range validateFindings(env) {
+		if f["name"] == "malformed_date" && f["status"] != "warning" {
+			t.Fatalf("malformed_date must be a warning: %#v", f)
+		}
+		if f["name"] == "invalid_status" && f["status"] != "error" {
+			t.Fatalf("invalid_status must be an error: %#v", f)
+		}
+	}
+}
+
+func TestValidateNeverMutatesAndDeterministicOrder(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	writeRawDocForTest(t, adr, "0002-b.md", "ADR-0002", "superseded", "superseded_by: ADR-0009\n")
+	writeRawDocForTest(t, adr, "0001-a.md", "ADR-0001", "superseded", "")
+
+	before, err := os.ReadFile(filepath.Join(adr, "0001-a.md"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	code, env := runKindTest(t, append(dirs, "validate")...)
+	if code != exitState {
+		t.Fatalf("validate code = %d", code)
+	}
+	after, err := os.ReadFile(filepath.Join(adr, "0001-a.md"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("validate mutated the corpus")
+	}
+
+	// Findings are ordered by path then check name.
+	var prevPath, prevName string
+	for _, f := range validateFindings(env) {
+		path, _ := f["path"].(string)
+		name := f["name"].(string)
+		if path < prevPath || (path == prevPath && name < prevName) {
+			t.Fatalf("findings out of order at %#v after %s/%s", f, prevPath, prevName)
+		}
+		prevPath, prevName = path, name
+	}
+
+	// A repeated run produces identical findings.
+	_, envAgain := runKindTest(t, append(dirs, "validate")...)
+	firstFindings, _ := json.Marshal(env["data"].(map[string]any)["findings"])
+	secondFindings, _ := json.Marshal(envAgain["data"].(map[string]any)["findings"])
+	if !bytes.Equal(firstFindings, secondFindings) {
+		t.Fatal("validate findings are not deterministic across runs")
+	}
+}
+
 func TestContextFormatRendersDomainList(t *testing.T) {
 	domain := filepath.Join(t.TempDir(), "domain")
 	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "ADR", "--status", "accepted"); code != exitOK {

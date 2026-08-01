@@ -41,6 +41,8 @@ type Diagnostic struct {
 	Status       string `json:"status"`
 	Message      string `json:"message"`
 	SuggestedFix string `json:"suggested_fix,omitempty"`
+	Path         string `json:"path,omitempty"`
+	ID           string `json:"id,omitempty"`
 }
 
 type NextAction struct {

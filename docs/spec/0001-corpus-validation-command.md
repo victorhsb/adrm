@@ -2,7 +2,7 @@
 kind: spec
 id: SPEC-0001
 title: Corpus validation command
-status: proposed
+status: accepted
 date: 2026-07-30
 tags: cli, validation
 supersedes: 

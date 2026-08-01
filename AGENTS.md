@@ -28,6 +28,9 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
   (`skill.go`), with version/hash metadata and install/update helpers.
 - `.agents/skills/project-planning`: repository-local planning workflow that
   discovers current ADR and SPEC constraints before producing a plan.
+- `.opencode/agents/canon-critic.md`: read-only subagent that judges whether
+  an ADR, SPEC, or Domain entry is worth keeping or creating, grounded in
+  DM-0004. Invocable via `@canon-critic`.
 - `scripts`: build and install helpers (e.g. `scripts/install.sh`).
 - `docs/adr`: project ADRs managed by `canon`.
 - `docs/domain`: the project Domain Model (one canonical concept per entry)
@@ -51,13 +54,18 @@ directories and independent numbering:
   single source of truth for what things mean.
 
 Commands that create or scope documents by kind are kind-prefixed:
-`canon adr new|list|search|init`, `canon spec new|list|search|init`, and
-`canon domain new|list|search|init` (ADR-0009). Plain `canon list` and
-`canon search` cover all kinds. Commands that take `--id` route by id prefix,
-so they need no kind prefix. `doctor` checks all three directories; a missing
-`docs/spec` or `docs/domain` is a warning, not an error. Doctor also flags
-domain-model integrity problems: duplicate accepted titles and references to
-superseded or deprecated entries.
+`canon adr new|list|search|validate|init`, `canon spec new|list|search|validate|init`,
+and `canon domain new|list|search|validate|init` (ADR-0008). Plain `canon list`,
+`canon search`, and `canon validate` cover all kinds. Commands that take
+`--id` route by id prefix, so they need no kind prefix. `doctor` checks all
+three directories; a missing `docs/spec` or `docs/domain` is a warning, not
+an error. Doctor also flags domain-model integrity problems: duplicate
+accepted titles and references to superseded or deprecated entries.
+`validate` (SPEC-0001) runs the deep integrity catalog — malformed files,
+duplicate ids, broken references, reciprocity, metadata validity, and
+kind/id/directory coherence — through the shared validation engine
+(ADR-0009); `doctor` is that engine's shallow mode. Use `doctor` to answer
+"can I work here?" and `validate` to answer "is my corpus healthy?"
 
 ## Document Rules (ADR/SPEC/Domain)
 

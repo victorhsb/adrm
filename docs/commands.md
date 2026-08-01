@@ -91,6 +91,60 @@ canon domain init --dry-run
 canon domain init
 ```
 
+## `validate` / `adr validate` / `spec validate` / `domain validate`
+
+Runs the corpus integrity check catalog (SPEC-0001) through the shared
+validation engine (ADR-0009); `doctor` is the engine's shallow mode.
+Plain `canon validate` covers all three directories; the prefixed forms scope
+the run to one directory. `validate` never mutates the corpus.
+
+```sh
+canon validate
+canon validate --strict
+canon validate --id ADR-0001
+canon adr validate
+canon spec validate
+canon domain validate
+```
+
+Flags:
+
+- `--id`: validate only that document and its references. Plain
+  `canon validate` only; the id prefix already selects the kind.
+- `--strict`: exit 4 when only warnings exist.
+
+Checks, as findings with severity in the `status` field:
+
+- Errors: `malformed_file` (isolated per file, so one bad file does not mask
+  the rest), `duplicate_id` (names both paths), `broken_reference`
+  (`supersedes`, `superseded_by`, or `deprecated_by` pointing at a
+  nonexistent id), `reciprocity_violation` (ADR-0004: `A.superseded_by=B`
+  requires `B.supersedes` to contain `A`), `invalid_status`, `kind_mismatch`
+  (kind field contradicts the id prefix), `directory_mismatch` (document
+  stored in the wrong kind's directory).
+- Warnings: `missing_directory`, `status_reference_inconsistency` (status
+  `superseded` without `superseded_by` and vice versa; status `deprecated`
+  without `deprecated_by`), `malformed_date` (date is not `YYYY-MM-DD`).
+
+Reference values that are not ids (for example the literal `manual` written
+by `canon deprecate`) are not treated as references.
+
+Output contains `findings` only (no per-file ok entries) plus a `summary`
+object with `files_checked`, `errors`, and `warnings`. Findings extend the
+diagnostic shape with optional `path` and `id` fields, carry a concrete
+`suggested_fix`, and are ordered deterministically by path then check name.
+
+Envelope status is `error` if any error finding exists, else `warning` if any
+warning exists, else `ok`. Exit code is 4 when any error exists, otherwise 0;
+`--strict` also exits 4 when only warnings exist.
+
+Safety: read-only.
+
+Errors:
+
+- `document_not_found`: no parseable document claims the `--id` value.
+- `id_with_kind_scope`: `--id` passed to a kind-prefixed `validate`.
+
 ## `adr init` / `spec init` / `domain init`
 
 Creates the ADR, SPEC, or domain directory if it does not exist.

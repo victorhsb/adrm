@@ -138,6 +138,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runCommands(stdout, opts)
 	case "doctor":
 		return runDoctor(stdout, opts, repo)
+	case "validate":
+		return runValidate(stdout, stderr, opts, repo, commandArgs, "")
 	case "init", "new":
 		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s`, `canon spec %s`, or `canon domain %s`.", command, command, command)), opts.Format)
 		return exitUsage
@@ -169,7 +171,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 // and `canon spec list`. Only commands that create or scope documents by kind
 // live under the prefix; document commands route by --id prefix instead.
 func runKindCommand(kind string, stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	suggested := fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, or `canon %s init`.", kind, kind, kind, kind)
+	suggested := fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, `canon %s validate`, or `canon %s init`.", kind, kind, kind, kind, kind)
 	if len(args) == 0 {
 		writeEnvelope(stdout, errorEnvelope(kind, "missing_kind_subcommand", "usage", fmt.Sprintf("%q requires a subcommand", kind), suggested), opts.Format)
 		return exitUsage
@@ -181,6 +183,8 @@ func runKindCommand(kind string, stdout, stderr io.Writer, opts GlobalOptions, r
 		return runList(stdout, stderr, opts, repo, args[1:], kind)
 	case "search":
 		return runSearch(stdout, stderr, opts, repo, args[1:], kind)
+	case "validate":
+		return runValidate(stdout, stderr, opts, repo, args[1:], kind)
 	case "init":
 		return runInit(stdout, stderr, opts, repo, args[1:], kind)
 	default:
@@ -231,23 +235,82 @@ func isKind(value string) bool {
 	return value == KindADR || value == KindSPEC || value == KindDomain
 }
 
+// runValidate reports corpus integrity findings from the shared validation
+// engine in full mode (SPEC-0001). An empty kind validates the whole corpus;
+// a kind from `canon adr validate`, `canon spec validate`, or
+// `canon domain validate` scopes the run. The command never mutates.
+func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
+	command := "validate"
+	if kind != "" {
+		command = kind + " validate"
+	}
+	fs := newCommandFlagSet(stderr, command)
+	id := fs.String("id", "", "validate only this document and its references")
+	strict := fs.Bool("strict", false, "exit 4 when only warnings exist")
+	if help, err := parseFlags(fs, args); err != nil {
+		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
+		return exitUsage
+	} else if help {
+		return exitOK
+	}
+	var result validationResult
+	if strings.TrimSpace(*id) != "" {
+		if kind != "" {
+			writeEnvelope(stdout, errorEnvelope(command, "id_with_kind_scope", "usage", "--id is only supported by plain `canon validate`", fmt.Sprintf("Run `canon validate --id %s`; the id prefix already selects the kind.", *id)), opts.Format)
+			return exitUsage
+		}
+		if _, _, err := normalizeID(*id); err != nil {
+			writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
+			return exitUsage
+		}
+		single, found := validateSingle(repo, *id)
+		if !found {
+			writeEnvelope(stdout, errorEnvelope(command, "document_not_found", "state", fmt.Sprintf("no parseable document with id %s", strings.ToUpper(strings.TrimSpace(*id))), "Run `canon list` to inspect known ids, or `canon validate` to find malformed files."), opts.Format)
+			return exitNotFound
+		}
+		result = single
+	} else {
+		result = validateCorpus(repo, kind)
+	}
+	status := "ok"
+	if result.Summary.Errors > 0 {
+		status = "error"
+	} else if result.Summary.Warnings > 0 {
+		status = "warning"
+	}
+	nextActions := []NextAction{}
+	for _, finding := range result.Findings {
+		if finding.ID != "" {
+			nextActions = append(nextActions, NextAction{Command: fmt.Sprintf("canon show --id %s", finding.ID), Description: "Inspect a flagged document.", Safety: "read-only"})
+			break
+		}
+	}
+	nextActions = append(nextActions, NextAction{Command: "canon doctor", Description: "Check repository readiness before remediating.", Safety: "read-only"})
+	writeEnvelope(stdout, Envelope{
+		Command: command,
+		Status:  status,
+		Data: map[string]any{
+			"findings": result.Findings,
+			"summary":  result.Summary,
+		},
+		NextActions: nextActions,
+	}, opts.Format)
+	if result.Summary.Errors > 0 || (*strict && result.Summary.Warnings > 0) {
+		return exitState
+	}
+	return exitOK
+}
+
+// runDoctor reports repository readiness using the shared validation engine
+// in shallow mode (ADR-0009): directory existence and parseability only,
+// plus the domain-model integrity checks that are part of doctor's contract.
 func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
-	checks := []Diagnostic{}
-	for _, store := range []Store{repo.ADR, repo.Spec, repo.Domain} {
-		label := store.Kind
-		if !store.Exists() {
-			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon %s init --dry-run`, then `canon %s init`.", label, label)})
-			continue
-		}
-		checks = append(checks, Diagnostic{Name: label + "_directory", Status: "ok", Message: fmt.Sprintf("%s exists", store.Dir)})
-		adrs, err := store.List()
-		if err != nil {
-			env := errorEnvelope("doctor", label+"_read_failed", "io", fmt.Sprintf("failed to read %s directory", label), "Check file permissions and front matter.")
-			env.Error.Diagnostics = checks
-			writeEnvelope(stdout, env, opts.Format)
-			return exitIO
-		}
-		checks = append(checks, Diagnostic{Name: label + "_parse", Status: "ok", Message: fmt.Sprintf("%d %s files parsed", len(adrs), label)})
+	checks, failedKind, readErr := shallowDiagnostics(repo)
+	if readErr != nil {
+		env := errorEnvelope("doctor", failedKind+"_read_failed", "io", fmt.Sprintf("failed to read %s directory", failedKind), "Check file permissions and front matter.")
+		env.Error.Diagnostics = checks
+		writeEnvelope(stdout, env, opts.Format)
+		return exitIO
 	}
 	if repo.Domain.Exists() {
 		checks = append(checks, domainIntegrityChecks(repo)...)

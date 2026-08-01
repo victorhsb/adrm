@@ -2,8 +2,8 @@
 name: canon
 description: Manage Architecture Decision Records (ADRs), SPECs, and domain entries with the canon CLI. Use whenever creating, recording, or revisiting an architectural decision; defining or updating a canonical domain concept; transitioning an ADR, SPEC, or domain entry through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history or the domain model; or initializing document storage - even if the user does not mention canon by name.
 ---
-<!-- canon-skill-version: 8 -->
-<!-- canon-skill-hash: sha256:2532c558c7662bc6afcc064cb9a6f8dd1fc4881c30370d5329441d8da40c261c -->
+<!-- canon-skill-version: 9 -->
+<!-- canon-skill-hash: sha256:eb9c5b359f1c8e2e095bb88e01b0ee05fbb3322a738839309b072380ec6b52b6 -->
 
 # CANON Agent Skill
 
@@ -12,7 +12,7 @@ Use canon to manage Architecture Decision Records without guessing repository st
 ## Operating rules
 
 1. Start with `canon commands` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `canon doctor` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `canon adr init --dry-run`, `canon spec init --dry-run`, or `canon domain init --dry-run` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries.
+2. Run `canon doctor` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `canon adr init --dry-run`, `canon spec init --dry-run`, or `canon domain init --dry-run` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `canon validate` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
 3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `canon --format context adr list --status accepted` emits concise Markdown; use context format only with list commands. Every JSON response has `schema_version`, `status`, `data`, and optional `error` / `next_actions`.
 4. For every mutating command, run the same command with `--dry-run` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `No changes were made.` in warnings.
 5. Use `canon list` (all kinds), `canon adr list` / `canon spec list` / `canon domain list`, `canon search --query ...`, and `canon show --id ...` to gather context before changing a document.

@@ -17,6 +17,10 @@ interactive prompts.
    canon doctor
    ```
 
+   For deep integrity checks (malformed files, duplicate ids, broken
+   references, reciprocity, metadata validity), run `canon validate`. `doctor`
+   answers "can I work here?"; `validate` answers "is my corpus healthy?"
+
 3. Query before mutating.
 
    ```sh
@@ -42,6 +46,16 @@ interactive prompts.
    ```sh
    canon show --id ADR-0001
    ```
+
+7. After mutations, confirm corpus health.
+
+   ```sh
+   canon validate
+   ```
+
+   Exit code 4 means error-severity findings exist; each finding carries a
+   `suggested_fix`. Use `canon validate --id ADR-0001` to check only the
+   document just changed and its references.
 
 ## Querying strategy
 

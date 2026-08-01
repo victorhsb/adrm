@@ -6,7 +6,6 @@ next steps should preserve agent-friendly behavior as the command surface grows.
 ## Near term
 
 - Add `accept` and `reject` commands for explicit lifecycle transitions.
-- Add `validate` to check ADR metadata, broken supersede references, duplicate ids, and malformed files.
 - Add richer search output with matched fields and line references.
 - Add JSON schema files for command envelopes and ADR payloads.
 
