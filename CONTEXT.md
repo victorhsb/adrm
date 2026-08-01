@@ -38,8 +38,8 @@ The full set of ADR, SPEC, and domain entry files across all three directories, 
 _Avoid_: repo, collection, database
 
 **Finding**:
-A single validation result about the corpus: a check name, a severity, a location, and a suggested fix.
-_Avoid_: error, issue, violation
+A single problem or advisory reported by validating the corpus: a check name, a severity (error or warning), an optional location, and a suggested fix. Healthy (ok) results are diagnostics, not findings.
+_Avoid_: diagnostic, error, issue, violation
 
 **Shallow validation**:
 Readiness checks answering "can I work here?": directories exist and files parse.

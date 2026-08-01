@@ -13,7 +13,7 @@ deprecated_by:
 
 ## Status
 
-proposed
+accepted
 
 ## Context
 

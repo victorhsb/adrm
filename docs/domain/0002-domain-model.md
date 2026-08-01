@@ -27,4 +27,4 @@ The full set of accepted domain entries; the project's single source of truth fo
 
 ## Relationships
 
-The Domain Model defines the concepts that [ADR](0001-adr.md)s and [SPEC](0003-spec.md)s talk about. Agents search it before and during planning and update it when terms crystallize.
+The Domain Model defines the concepts that [ADR](0001-adr.md)s and [SPEC](0003-spec.md)s talk about. Its members are [Domain Entry](0005-domain-entry.md) records. Agents search it before and during planning and update it when terms crystallize.
