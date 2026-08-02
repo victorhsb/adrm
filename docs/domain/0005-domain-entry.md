@@ -21,8 +21,7 @@ A single canonical definition of one domain concept: its meaning, avoided terms 
 
 ## Avoid
 
-- **glossary entry** — a glossary entry is a flat word definition, a domain entry is lifecycle-managed with rejected wording and relationships
-- **dictionary term** — a dictionary term is descriptive of all usage, a domain entry is prescriptive about canonical usage
+See [When to Use Domain Entry](0012-when-to-use-domain-entry.md) for occasions where a domain entry is not the right record.
 
 ## Relationships
 

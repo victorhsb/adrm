@@ -25,6 +25,7 @@ The canonical gate for recording an architecture decision. An ADR is recorded on
 
 ## Avoid
 
+- **design doc** — too broad, an ADR is one dated decision, not an evolving design overview
 - **roadmap item** — plans are not commitments
 - **ticket** — tracks work, not decisions
 - **changelog entry** — describes what changed, not why

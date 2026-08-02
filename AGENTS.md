@@ -101,7 +101,8 @@ agent workflows, or skill behavior; update `AGENTS.md` or the relevant
 `SKILL.md` directly. The canonical gate is DM-0004 (`canon show --id DM-0004`,
 "When to Use ADR"); note that the bundled skill intentionally restates the
 rubric generically and must not reference this project's ADR or DM ids, since
-it ships to other projects.
+it ships to other projects. The other kinds have their own canonical gates:
+DM-0011 ("When to Use SPEC") and DM-0012 ("When to Use Domain Entry").
 
 ## CLI Design Constraints
 
