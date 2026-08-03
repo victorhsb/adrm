@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Canon gives coding agents a persistent, project-local record of what your software means, requires, and has decided."
+    />
+    <meta name="theme-color" content="#f1f0e8" />
+    <title>Canon — Give your agents a memory</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <a class="wordmark" href="#top" aria-label="Canon home">
+        <span class="wordmark-mark" aria-hidden="true">C:</span>
+        <span>canon</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#philosophy">Philosophy</a>
+        <a href="#records">Records</a>
+        <a href="#workflow">Workflow</a>
+      </nav>
+
+      <a
+        class="header-cta"
+        href="https://github.com/victorhsb/canon"
+        target="_blank"
+        rel="noreferrer"
+      >
+        View on GitHub <span aria-hidden="true">↗</span>
+      </a>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="top">
+        <div class="hero-copy reveal">
+          <p class="eyebrow"><span>Open-source CLI</span> / Built for coding agents</p>
+          <h1>Keep the speed.<br /><em>Add the memory.</em></h1>
+          <p class="hero-lede">
+            Canon turns the decisions, requirements, and language of your codebase
+            into persistent records—so every coding agent starts from what your
+            project already knows.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#workflow">
+              See how it works <span aria-hidden="true">↓</span>
+            </a>
+            <a
+              class="button button-secondary"
+              href="https://github.com/victorhsb/canon"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Explore the project <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-artifact reveal" aria-label="An illustrative Canon project record">
+          <div class="artifact-topbar">
+            <span>illustrative-record.md</span>
+            <span class="status"><i></i> example</span>
+          </div>
+          <div class="artifact-body">
+            <div class="artifact-meta">
+              <span>ADR-XXXX</span>
+              <span>PROJECT-LOCAL</span>
+            </div>
+            <h2>Agents retrieve context before changing governed code</h2>
+            <div class="artifact-rule"></div>
+            <div class="artifact-section">
+              <span>01 / Context</span>
+              <p>Fast iteration becomes fragile when every session begins without the history behind the code.</p>
+            </div>
+            <div class="artifact-section">
+              <span>02 / Decision</span>
+              <p>Relevant project records are retrieved and read before a governed change is planned.</p>
+            </div>
+            <div class="artifact-foot">
+              <span>Plain Markdown</span>
+              <span>Version controlled</span>
+              <span>Agent readable</span>
+            </div>
+          </div>
+          <div class="artifact-shadow" aria-hidden="true"></div>
+        </div>
+
+        <div class="hero-index" aria-hidden="true">001 / MANIFESTO</div>
+      </section>
+
+      <section class="manifesto section" id="philosophy">
+        <div class="section-kicker reveal">
+          <span>01</span>
+          <p>The philosophy</p>
+        </div>
+        <div class="manifesto-content">
+          <h2 class="section-title reveal">
+            Vibe coding is fast.<br />Software engineering is <em>cumulative.</em>
+          </h2>
+          <div class="manifesto-grid">
+            <p class="manifesto-lede reveal">
+              Prompts create momentum. Engineering creates continuity. Canon is the
+              bridge: a durable layer of context that survives the chat, the agent,
+              and the next rewrite.
+            </p>
+            <div class="principles">
+              <article class="principle reveal">
+                <span>01</span>
+                <div>
+                  <h3>The repository remembers</h3>
+                  <p>Knowledge lives beside the code in plain, reviewable Markdown—not inside a disappearing conversation.</p>
+                </div>
+              </article>
+              <article class="principle reveal">
+                <span>02</span>
+                <div>
+                  <h3>Records drive the work</h3>
+                  <p>Agents retrieve the relevant meaning, requirements, and decisions before they plan or change code.</p>
+                </div>
+              </article>
+              <article class="principle reveal">
+                <span>03</span>
+                <div>
+                  <h3>Change stays explicit</h3>
+                  <p>Records are not rigid law. When direction changes, the history is amended or superseded instead of silently forgotten.</p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="records section section-dark" id="records">
+        <div class="section-kicker reveal">
+          <span>02</span>
+          <p>One corpus, three questions</p>
+        </div>
+        <div class="records-heading reveal">
+          <h2 class="section-title">Give every agent the same source of truth.</h2>
+          <p>
+            Canon manages a connected corpus of project records. Each kind has a
+            narrow job, a stable identity, and a lifecycle that can evolve.
+          </p>
+        </div>
+
+        <div class="record-grid">
+          <article class="record-card record-domain reveal">
+            <div class="record-card-top">
+              <span class="record-id">DM-0001</span>
+              <span class="record-kind">Domain</span>
+            </div>
+            <div class="record-question">What does it mean?</div>
+            <h3>Define the language.</h3>
+            <p>Canonical concepts, precise definitions, avoided terms, and the relationships between them.</p>
+            <div class="record-example">
+              <span>From Canon’s own corpus</span>
+              <div class="record-example-title">
+                <strong>Corpus</strong>
+                <small>DM-0007 · accepted</small>
+              </div>
+              <p>“The full set of ADR, SPEC, and domain entry files […] treated as one subject of integrity checks.”</p>
+              <a href="https://github.com/victorhsb/canon/blob/main/docs/domain/0007-corpus.md" target="_blank" rel="noreferrer">
+                Read the domain entry <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </article>
+
+          <article class="record-card record-spec reveal">
+            <div class="record-card-top">
+              <span class="record-id">SPEC-0001</span>
+              <span class="record-kind">Specification</span>
+            </div>
+            <div class="record-question">What must it do?</div>
+            <h3>Make behavior testable.</h3>
+            <p>Functional requirements, constraints, and acceptance criteria for a concrete capability.</p>
+            <div class="record-example">
+              <span>From Canon’s own corpus</span>
+              <div class="record-example-title">
+                <strong>Corpus validation command</strong>
+                <small>SPEC-0001 · accepted</small>
+              </div>
+              <p>“A corpus containing a duplicate id exits 4 with status error and a duplicate_id finding naming both paths.”</p>
+              <a href="https://github.com/victorhsb/canon/blob/main/docs/spec/0001-corpus-validation-command.md" target="_blank" rel="noreferrer">
+                Read the specification <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </article>
+
+          <article class="record-card record-adr reveal">
+            <div class="record-card-top">
+              <span class="record-id">ADR-0001</span>
+              <span class="record-kind">Decision</span>
+            </div>
+            <div class="record-question">Why this approach?</div>
+            <h3>Preserve the reasoning.</h3>
+            <p>Narrow architectural commitments with their context, chosen direction, and consequences.</p>
+            <div class="record-example">
+              <span>From Canon’s own corpus</span>
+              <div class="record-example-title">
+                <strong>Context-focused Markdown</strong>
+                <small>ADR-0010 · accepted</small>
+              </div>
+              <p>“Add context as an explicit opt-in output format while keeping JSON as the default.”</p>
+              <a href="https://github.com/victorhsb/canon/blob/main/docs/adr/0010-provide-a-context-focused-markdown-output-projection.md" target="_blank" rel="noreferrer">
+                Read the decision <span aria-hidden="true">↗</span>
+              </a>
+            </div>
+          </article>
+        </div>
+
+        <div class="records-chain reveal" aria-label="Domain defines meaning, specification defines behavior, and ADR explains the approach">
+          <span>Meaning</span><i>→</i><span>Behavior</span><i>→</i><span>Approach</span>
+        </div>
+      </section>
+
+      <section class="workflow section" id="workflow">
+        <div class="section-kicker reveal">
+          <span>03</span>
+          <p>The agent loop</p>
+        </div>
+        <div class="workflow-layout">
+          <div class="workflow-copy reveal">
+            <h2 class="section-title">Context becomes part of the build loop.</h2>
+            <p>
+              Canon is designed for agents to operate directly. Commands are
+              discoverable, reads are structured, and every mutation can be
+              previewed before it touches the corpus.
+            </p>
+            <div class="workflow-note">
+              <span aria-hidden="true">✦</span>
+              <p><strong>Titles route attention.</strong> Full records provide the grounding. An agent uses both.</p>
+            </div>
+          </div>
+
+          <ol class="workflow-steps">
+            <li class="workflow-step reveal">
+              <span class="step-number">01</span>
+              <div>
+                <h3>Discover</h3>
+                <p>Inspect the available commands and the health of the project corpus.</p>
+              </div>
+              <code>canon doctor</code>
+            </li>
+            <li class="workflow-step reveal">
+              <span class="step-number">02</span>
+              <div>
+                <h3>Retrieve</h3>
+                <p>Find the records that govern the area, then read them in full.</p>
+              </div>
+              <code>canon search --query "auth"</code>
+            </li>
+            <li class="workflow-step reveal">
+              <span class="step-number">03</span>
+              <div>
+                <h3>Plan & build</h3>
+                <p>Let accepted language, behavior, and decisions constrain the change.</p>
+              </div>
+              <code>canon show --id ADR-0007</code>
+            </li>
+            <li class="workflow-step reveal">
+              <span class="step-number">04</span>
+              <div>
+                <h3>Record</h3>
+                <p>Preview new knowledge, apply it, and keep the corpus current.</p>
+              </div>
+              <code>canon adr new … --dry-run</code>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="cli section">
+        <div class="cli-panel reveal">
+          <div class="cli-copy">
+            <p class="eyebrow">Start with the repository</p>
+            <h2>Install the memory<br />where the work happens.</h2>
+            <p>
+              Canon is a small, dependency-free Go CLI. Its records stay portable,
+              diffable, and owned by your project.
+            </p>
+          </div>
+          <div class="terminal" aria-label="Canon quick start commands">
+            <div class="terminal-bar">
+              <div><i></i><i></i><i></i></div>
+              <span>quick-start.sh</span>
+              <button class="copy-button" type="button" data-copy aria-label="Copy quick start commands">
+                <span class="copy-label">Copy</span>
+              </button>
+            </div>
+            <pre><code data-command><span class="prompt">$</span> go install github.com/victorhsb/canon/cmd/canon@latest
+<span class="prompt">$</span> cd your-project
+<span class="prompt">$</span> canon commands
+<span class="prompt">$</span> canon doctor
+
+<span class="comment"># Your project can now remember why.</span></code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing section">
+        <p class="eyebrow reveal">A codebase should outlive its prompts.</p>
+        <h2 class="reveal">Make the context<br /><em>canonical.</em></h2>
+        <a
+          class="closing-link reveal"
+          href="https://github.com/victorhsb/canon"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Explore Canon on GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="wordmark" href="#top"><span class="wordmark-mark">C:</span><span>canon</span></a>
+      <p>Persistent records for agent-led software.</p>
+      <div>
+        <a href="https://github.com/victorhsb/canon" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/victorhsb/canon#readme" target="_blank" rel="noreferrer">Documentation</a>
+      </div>
+    </footer>
+  </body>
+</html>

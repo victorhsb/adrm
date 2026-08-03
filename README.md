@@ -15,6 +15,18 @@ The initial command surface is intentionally agent-centric:
 - `canon skill` plus `canon skill install/update` to publish repository-local
   agent instructions for operating the CLI.
 
+## Website
+
+The project landing page lives in [`site/`](site/) as dependency-free static
+HTML, CSS, and JavaScript. A GitHub Actions workflow publishes that directory
+to GitHub Pages after Pages is configured to use GitHub Actions as its source.
+
+Preview it locally with any static file server, for example:
+
+```sh
+python3 -m http.server 8080 --directory site
+```
+
 ## Build
 
 ```sh
@@ -23,7 +35,14 @@ go build ./cmd/canon
 
 ## Install
 
-Use the install script to build and place the binary on your PATH:
+Install the latest version directly with Go:
+
+```sh
+go install github.com/victorhsb/canon/cmd/canon@latest
+```
+
+Alternatively, use the repository's install script to build and place the
+binary on your PATH:
 
 ```sh
 scripts/install.sh              # installs to ~/.local/bin or /usr/local/bin
