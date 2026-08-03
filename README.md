@@ -1,4 +1,10 @@
-# canon
+<p align="center">
+  <img src="site/project-icon.png" width="128" height="128" alt="Canon C colon project icon">
+</p>
+
+<h1 align="center">canon</h1>
+
+<p align="center"><strong>Persistent records for agent-led software.</strong></p>
 
 `canon` is a CLI for managing the canonical records of a codebase —
 Architecture Decision Records (ADRs), software specifications (SPECs), and the
