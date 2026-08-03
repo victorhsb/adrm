@@ -33,6 +33,7 @@ func TestCatalogContainsOnlySkillAssets(t *testing.T) {
 		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
 		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
 		filepath.Join(".claude", "agents", "canon-critic.md"),
+		filepath.Join(".codex", "agents", "canon-critic.toml"),
 		filepath.Join(".opencode", "agents", "canon-critic.md"),
 	} {
 		if !containsString(assets[1].TargetPaths, want) {
@@ -46,8 +47,8 @@ func TestManagedFilesRenderWholeBundleDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("managed files: %v", err)
 	}
-	if len(files) != 5 {
-		t.Fatalf("managed file count = %d, want 5", len(files))
+	if len(files) != 6 {
+		t.Fatalf("managed file count = %d, want 6", len(files))
 	}
 	paths := make([]string, 0, len(files))
 	for _, file := range files {
@@ -55,21 +56,22 @@ func TestManagedFilesRenderWholeBundleDeterministically(t *testing.T) {
 		if file.Version == "" || !strings.HasPrefix(file.Hash(), "sha256:") {
 			t.Fatalf("file missing version/hash: %#v", file)
 		}
-		if !strings.Contains(file.Content(), "<!-- canon-skill-version: "+file.Version+" -->") ||
-			!strings.Contains(file.Content(), "<!-- canon-skill-hash: "+file.Hash()+" -->") {
+		format := markerFormatForPath(file.Path)
+		if !strings.Contains(file.Content(), versionMarker(file.Version, format)) ||
+			!strings.Contains(file.Content(), hashMarker(file.Hash(), format)) {
 			t.Fatalf("file missing management markers: %s", file.Path)
 		}
 	}
 	if !sort.StringsAreSorted(paths) {
 		t.Fatalf("paths not sorted: %#v", paths)
 	}
-	if containsPath(paths, filepath.Join(".codex", "agents", "canon-critic.md")) {
-		t.Fatalf("codex unexpectedly rendered an agent: %#v", paths)
+	if !containsPath(paths, filepath.Join(".codex", "agents", "canon-critic.toml")) {
+		t.Fatalf("codex agent missing: %#v", paths)
 	}
 }
 
 func TestAgentRenderingIsTargetSpecificAndProjectAgnostic(t *testing.T) {
-	files, err := ManagedFiles([]string{"canon-record-gate"}, "", []string{TargetOpenCode, TargetClaude})
+	files, err := ManagedFiles([]string{"canon-record-gate"}, "", []string{TargetOpenCode, TargetClaude, TargetCodex})
 	if err != nil {
 		t.Fatalf("managed files: %v", err)
 	}
@@ -92,7 +94,26 @@ func TestAgentRenderingIsTargetSpecificAndProjectAgnostic(t *testing.T) {
 		}
 	}
 
-	for name, content := range map[string]string{"opencode": opencode, "claude": claude} {
+	codex := byPath[filepath.Join(".codex", "agents", "canon-critic.toml")].Content()
+	for _, want := range []string{
+		`name = "canon-critic"`,
+		`description = "Judges whether an ADR`,
+		`sandbox_mode = "read-only"`,
+		`developer_instructions = "You are a canon corpus critic:`,
+		`# canon-skill-version: 2`,
+		`# canon-skill-hash: sha256:`,
+	} {
+		if !strings.Contains(codex, want) {
+			t.Fatalf("codex agent missing %q:\n%s", want, codex)
+		}
+	}
+	for _, unwanted := range []string{"model =", "model_reasoning_effort"} {
+		if strings.Contains(codex, unwanted) {
+			t.Fatalf("codex agent pins %q:\n%s", unwanted, codex)
+		}
+	}
+
+	for name, content := range map[string]string{"opencode": opencode, "claude": claude, "codex": codex} {
 		for _, unwanted := range []string{"go run ./cmd/canon", "canon repository", "corpus of 16 entries"} {
 			if strings.Contains(content, unwanted) {
 				t.Fatalf("%s agent contains project-specific text %q", name, unwanted)
@@ -100,6 +121,18 @@ func TestAgentRenderingIsTargetSpecificAndProjectAgnostic(t *testing.T) {
 		}
 		if !strings.Contains(content, "canon doctor") || !strings.Contains(content, "canon-record-gate") {
 			t.Fatalf("%s agent missing generic canon guidance:\n%s", name, content)
+		}
+	}
+}
+
+func TestCodexAgentRenderingEscapesTOMLBasicStrings(t *testing.T) {
+	content, err := renderAgent(TargetCodex, "quoted \"value\" at C:\\tmp\ncontrol:\x01\n")
+	if err != nil {
+		t.Fatalf("render codex agent: %v", err)
+	}
+	for _, want := range []string{`quoted \"value\"`, `C:\\tmp`, `\ncontrol:\u0001\n`} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("codex TOML missing escaped %q:\n%s", want, content)
 		}
 	}
 }
@@ -164,6 +197,41 @@ func TestInspectionDistinguishesCurrentOldAndModifiedFiles(t *testing.T) {
 	}
 
 	modifiedInspection := Inspect(file.Content()+"local edit\n", file)
+	if modifiedInspection.Managed || modifiedInspection.Current || !modifiedInspection.Modified {
+		t.Fatalf("modified inspection = %#v", modifiedInspection)
+	}
+}
+
+func TestInspectionDistinguishesCurrentOldAndModifiedCodexAgent(t *testing.T) {
+	files, err := ManagedFiles([]string{"canon-record-gate"}, "", []string{TargetCodex})
+	if err != nil {
+		t.Fatalf("managed files: %v", err)
+	}
+	var file ManagedFile
+	for _, candidate := range files {
+		if candidate.Path == filepath.Join(".codex", "agents", "canon-critic.toml") {
+			file = candidate
+			break
+		}
+	}
+	if file.Path == "" {
+		t.Fatal("codex managed file missing")
+	}
+
+	current := Inspect(file.Content(), file)
+	if !current.Managed || !current.Current || current.Modified {
+		t.Fatalf("current inspection = %#v", current)
+	}
+
+	old := strings.Replace(file.Content(), versionMarker(file.Version, tomlMarkers), versionMarker("0", tomlMarkers), 1)
+	oldHash := hashWithoutHashCommentForFormat(old, tomlMarkers)
+	old = strings.Replace(old, hashMarker(file.Hash(), tomlMarkers), hashMarker(oldHash, tomlMarkers), 1)
+	oldInspection := Inspect(old, file)
+	if !oldInspection.Managed || oldInspection.Current || oldInspection.Modified {
+		t.Fatalf("old inspection = %#v", oldInspection)
+	}
+
+	modifiedInspection := Inspect(file.Content()+"# local edit\n", file)
 	if modifiedInspection.Managed || modifiedInspection.Current || !modifiedInspection.Modified {
 		t.Fatalf("modified inspection = %#v", modifiedInspection)
 	}

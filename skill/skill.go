@@ -58,7 +58,7 @@ var assetSpecs = []assetSpec{
 	},
 	{
 		name:    "canon-record-gate",
-		version: "1",
+		version: "2",
 		files: []payloadFile{
 			{relativePath: "SKILL.md", sourcePath: "assets/canon-record-gate/SKILL.md"},
 			{relativePath: "references/boundary-examples.md", sourcePath: "assets/canon-record-gate/references/boundary-examples.md"},
@@ -85,12 +85,13 @@ type ManagedFile struct {
 	Path         string
 	Version      string
 
-	baseContent string
-	hash        string
+	baseContent  string
+	hash         string
+	markerFormat markerFormat
 }
 
 func (f ManagedFile) Content() string {
-	return insertHashMarker(f.baseContent, f.hash)
+	return insertHashMarker(f.baseContent, f.hash, f.markerFormat)
 }
 
 func (f ManagedFile) Hash() string {
@@ -106,6 +107,13 @@ type Inspection struct {
 	Current      bool
 	Modified     bool
 }
+
+type markerFormat int
+
+const (
+	markdownMarkers markerFormat = iota
+	tomlMarkers
+)
 
 // Catalog returns the bundle's public assets in deterministic order.
 func Catalog() []CatalogAsset {
@@ -187,8 +195,7 @@ func NormalizeTargets(targets []string) ([]string, error) {
 	return ordered, nil
 }
 
-// AgentPath returns the project-relative discovery path for a target. Codex is
-// a valid target but currently has no managed agent discovery file.
+// AgentPath returns the project-relative discovery path for a target.
 func AgentPath(target string) (string, error) {
 	switch target {
 	case TargetOpenCode:
@@ -196,7 +203,7 @@ func AgentPath(target string) (string, error) {
 	case TargetClaude:
 		return filepath.Join(".claude", "agents", AgentName+".md"), nil
 	case TargetCodex:
-		return "", nil
+		return filepath.Join(".codex", "agents", AgentName+".toml"), nil
 	default:
 		return "", fmt.Errorf("%w %q", ErrUnsupportedTarget, target)
 	}
@@ -233,14 +240,11 @@ func ManagedFiles(assetNames []string, skillsRoot string, targets []string) ([]M
 			if err != nil {
 				return nil, err
 			}
-			if path == "" {
-				continue
-			}
 			rendered, err := renderAgent(target, agentSource)
 			if err != nil {
 				return nil, err
 			}
-			relativePath := "agents/" + target + "/" + spec.agent.name + ".md"
+			relativePath := filepath.ToSlash(filepath.Join("agents", target, filepath.Base(path)))
 			files = append(files, newManagedFile(spec.name, KindAgent, relativePath, path, spec.version, rendered))
 		}
 	}
@@ -250,14 +254,14 @@ func ManagedFiles(assetNames []string, skillsRoot string, targets []string) ([]M
 
 // Inspect compares installed content with one desired managed file.
 func Inspect(content string, desired ManagedFile) Inspection {
-	inspection := Inspection{ActualHash: hashWithoutHashComment(content)}
+	inspection := Inspection{ActualHash: hashWithoutHashCommentForFormat(content, desired.markerFormat)}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "<!-- canon-skill-version:") && strings.HasSuffix(line, "-->"):
-			inspection.Version = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "<!-- canon-skill-version:"), "-->"))
-		case strings.HasPrefix(line, "<!-- canon-skill-hash:") && strings.HasSuffix(line, "-->"):
-			inspection.DeclaredHash = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "<!-- canon-skill-hash:"), "-->"))
+		if value, ok := markerValue(line, "canon-skill-version", desired.markerFormat); ok {
+			inspection.Version = value
+		}
+		if value, ok := markerValue(line, "canon-skill-hash", desired.markerFormat); ok {
+			inspection.DeclaredHash = value
 		}
 	}
 	inspection.Managed = inspection.Version != "" && inspection.DeclaredHash != "" && inspection.DeclaredHash == inspection.ActualHash
@@ -290,7 +294,8 @@ func readAsset(path string) string {
 }
 
 func newManagedFile(assetName, kind, relativePath, path, version, source string) ManagedFile {
-	base := insertVersionMarker(source, version)
+	format := markerFormatForPath(path)
+	base := insertVersionMarker(source, version, format)
 	return ManagedFile{
 		AssetName:    assetName,
 		Kind:         kind,
@@ -299,6 +304,7 @@ func newManagedFile(assetName, kind, relativePath, path, version, source string)
 		Version:      version,
 		baseContent:  base,
 		hash:         hashContent(base),
+		markerFormat: format,
 	}
 }
 
@@ -308,7 +314,7 @@ func catalogTargetPaths(spec assetSpec) []string {
 		paths = append(paths, filepath.Join(DefaultSkillsRoot, spec.name, filepath.FromSlash(payload.relativePath)))
 	}
 	if spec.agent != nil {
-		for _, target := range []string{TargetOpenCode, TargetClaude} {
+		for _, target := range SupportedTargets() {
 			path, err := AgentPath(target)
 			if err == nil && path != "" {
 				paths = append(paths, path)
@@ -367,6 +373,11 @@ func renderAgent(target, body string) (string, error) {
 			"tools: Read, Grep, Glob, Bash\n" +
 			"model: inherit\n" +
 			"---\n\n"
+	case TargetCodex:
+		return "name = " + tomlBasicString(AgentName) + "\n" +
+			"description = " + tomlBasicString(description) + "\n" +
+			"sandbox_mode = \"read-only\"\n" +
+			"developer_instructions = " + tomlBasicString(body) + "\n", nil
 	default:
 		return "", fmt.Errorf("no agent rendering for target %q", target)
 	}
@@ -377,9 +388,9 @@ func normalizeContent(content string) string {
 	return strings.TrimSpace(content) + "\n"
 }
 
-func insertVersionMarker(source, version string) string {
-	marker := versionComment(version)
-	if strings.HasPrefix(source, "---\n") {
+func insertVersionMarker(source, version string, format markerFormat) string {
+	marker := versionMarker(version, format)
+	if format == markdownMarkers && strings.HasPrefix(source, "---\n") {
 		if idx := strings.Index(source[len("---\n"):], "\n---\n"); idx >= 0 {
 			insertAt := len("---\n") + idx + len("\n---\n")
 			return source[:insertAt] + marker + "\n" + source[insertAt:]
@@ -388,28 +399,32 @@ func insertVersionMarker(source, version string) string {
 	return marker + "\n\n" + source
 }
 
-func insertHashMarker(base, hash string) string {
+func insertHashMarker(base, hash string, format markerFormat) string {
 	lines := strings.Split(base, "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "<!-- canon-skill-version:") {
-			lines = append(lines[:i+1], append([]string{hashComment(hash)}, lines[i+1:]...)...)
+		if _, ok := markerValue(strings.TrimSpace(line), "canon-skill-version", format); ok {
+			lines = append(lines[:i+1], append([]string{hashMarker(hash, format)}, lines[i+1:]...)...)
 			break
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-func hashWithoutHashComment(content string) string {
+func hashWithoutHashCommentForFormat(content string, format markerFormat) string {
 	lines := strings.Split(content, "\n")
 	kept := make([]string, 0, len(lines))
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "<!-- canon-skill-hash:") && strings.HasSuffix(trimmed, "-->") {
+		if _, ok := markerValue(trimmed, "canon-skill-hash", format); ok {
 			continue
 		}
 		kept = append(kept, line)
 	}
 	return hashContent(strings.Join(kept, "\n"))
+}
+
+func hashWithoutHashComment(content string) string {
+	return hashWithoutHashCommentForFormat(content, markdownMarkers)
 }
 
 func hashContent(content string) string {
@@ -418,9 +433,77 @@ func hashContent(content string) string {
 }
 
 func versionComment(version string) string {
-	return "<!-- canon-skill-version: " + version + " -->"
+	return versionMarker(version, markdownMarkers)
 }
 
 func hashComment(hash string) string {
+	return hashMarker(hash, markdownMarkers)
+}
+
+func markerFormatForPath(path string) markerFormat {
+	if strings.EqualFold(filepath.Ext(path), ".toml") {
+		return tomlMarkers
+	}
+	return markdownMarkers
+}
+
+func versionMarker(version string, format markerFormat) string {
+	if format == tomlMarkers {
+		return "# canon-skill-version: " + version
+	}
+	return "<!-- canon-skill-version: " + version + " -->"
+}
+
+func hashMarker(hash string, format markerFormat) string {
+	if format == tomlMarkers {
+		return "# canon-skill-hash: " + hash
+	}
 	return "<!-- canon-skill-hash: " + hash + " -->"
+}
+
+func markerValue(line, name string, format markerFormat) (string, bool) {
+	if format == tomlMarkers {
+		prefix := "# " + name + ":"
+		if !strings.HasPrefix(line, prefix) {
+			return "", false
+		}
+		return strings.TrimSpace(strings.TrimPrefix(line, prefix)), true
+	}
+	prefix := "<!-- " + name + ":"
+	if !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, "-->") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, prefix), "-->")), true
+}
+
+func tomlBasicString(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value) + 2)
+	builder.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '"':
+			builder.WriteString(`\"`)
+		case '\\':
+			builder.WriteString(`\\`)
+		case '\b':
+			builder.WriteString(`\b`)
+		case '\t':
+			builder.WriteString(`\t`)
+		case '\n':
+			builder.WriteString(`\n`)
+		case '\f':
+			builder.WriteString(`\f`)
+		case '\r':
+			builder.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				_, _ = fmt.Fprintf(&builder, `\u%04X`, r)
+				continue
+			}
+			builder.WriteRune(r)
+		}
+	}
+	builder.WriteByte('"')
+	return builder.String()
 }

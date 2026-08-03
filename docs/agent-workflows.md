@@ -204,7 +204,7 @@ A default installation writes:
 - `.agents/skills/canon/SKILL.md`
 - `.agents/skills/canon-record-gate/SKILL.md`
 - `.agents/skills/canon-record-gate/references/boundary-examples.md`
-- a rendered `canon-critic.md` for each selected subagent target
+- a rendered `canon-critic` file for each selected subagent target
 
 When `--agent` is absent, canon infers targets from existing `.opencode`,
 `.claude`, and `.codex` directories. If none exist, it falls back to OpenCode.
@@ -212,12 +212,15 @@ Select targets explicitly when needed:
 
 ```sh
 canon skill install --agent claude --dry-run
+canon skill install --agent codex --dry-run
 canon skill install --agent opencode --agent claude --dry-run
 ```
 
-Codex is a valid target and receives the shared `.agents/skills` payloads, but
-no `canon-critic` file is rendered because Codex does not yet publish a stable
-subagent discovery convention.
+Target-specific critic paths are `.opencode/agents/canon-critic.md`,
+`.claude/agents/canon-critic.md`, and `.codex/agents/canon-critic.toml`. The
+Codex TOML agent is read-only and inherits the active model and reasoning
+configuration while loading the shared `canon-record-gate` skill as directed by
+its developer instructions.
 
 Use `--only` for a partial installation or update:
 

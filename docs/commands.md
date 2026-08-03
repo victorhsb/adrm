@@ -455,6 +455,7 @@ canon skill install --dry-run
 canon skill install
 canon skill install --only canon --dry-run
 canon skill install --agent claude --dry-run
+canon skill install --agent codex --dry-run
 canon skill install --skill-dir .agents/skills --agent opencode --agent claude --dry-run
 ```
 
@@ -472,22 +473,23 @@ Flags:
 `--skill-dir` is a bundle root, not one asset's directory. Earlier single-skill
 versions treated a custom value as the `canon` skill directory itself; when
 migrating such a command, pass its parent directory instead. Skill payloads
-honor `--skill-dir`, while agent target inference and `.opencode`/`.claude`
-output paths are resolved from the current working directory.
+honor `--skill-dir`, while agent target inference and `.opencode`/`.claude`/
+`.codex` output paths are resolved from the current working directory.
 
 Effects:
 
 - Writes one `SKILL.md` per selected skill below the skill root.
 - Writes supporting payload files such as
   `.agents/skills/canon-record-gate/references/boundary-examples.md`.
-- When `canon-record-gate` is selected, renders `canon-critic.md` for each
-  selected target that supports subagent discovery:
+- When `canon-record-gate` is selected, renders the `canon-critic` component
+  for each selected target:
   - OpenCode: `.opencode/agents/canon-critic.md`
   - Claude: `.claude/agents/canon-critic.md`
-  - Codex: valid, but currently produces no agent file because Codex has no
-    stable subagent discovery contract.
-- Adds managed version and content-hash markers to every generated Markdown
-  file.
+  - Codex: `.codex/agents/canon-critic.toml`
+- Adds managed version and content-hash markers to every generated file.
+  Markdown uses HTML comments; Codex TOML uses `#` comments. The Codex agent is
+  read-only, carries the shared critic instructions in
+  `developer_instructions`, and inherits model and reasoning selection.
 
 When `--agent` is absent, targets are inferred from existing `.opencode`,
 `.claude`, and `.codex` directories in the current project. If none exist,

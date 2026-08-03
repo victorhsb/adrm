@@ -385,6 +385,18 @@ func TestSkillReturnsAssetCatalog(t *testing.T) {
 		if len(asset["target_paths"].([]any)) == 0 {
 			t.Fatalf("asset missing target paths: %#v", asset)
 		}
+		if wantName == "canon-record-gate" {
+			var foundCodex bool
+			for _, rawPath := range asset["target_paths"].([]any) {
+				if rawPath == filepath.Join(".codex", "agents", "canon-critic.toml") {
+					foundCodex = true
+					break
+				}
+			}
+			if !foundCodex {
+				t.Fatalf("record-gate catalog missing Codex agent path: %#v", asset)
+			}
+		}
 	}
 	if _, ok := data["content"]; ok {
 		t.Fatal("catalog unexpectedly includes embedded content")
@@ -470,7 +482,7 @@ func TestSkillInstallClaudeTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read claude agent: %v", err)
 	}
-	for _, want := range []string{"tools: Read, Grep, Glob, Bash", "model: inherit", "canon-skill-version: 1"} {
+	for _, want := range []string{"tools: Read, Grep, Glob, Bash", "model: inherit", "canon-skill-version: 2"} {
 		if !strings.Contains(string(content), want) {
 			t.Fatalf("claude agent missing %q:\n%s", want, content)
 		}
@@ -490,6 +502,9 @@ func TestSkillInstallInfersTargets(t *testing.T) {
 	if err := os.Mkdir(".claude", 0o755); err != nil {
 		t.Fatalf("mkdir .claude: %v", err)
 	}
+	if err := os.Mkdir(".codex", 0o755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
 
 	code, env := runForTest(t, "skill", "install", "--dry-run")
 	if code != exitOK {
@@ -501,6 +516,7 @@ func TestSkillInstallInfersTargets(t *testing.T) {
 		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
 		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
 		filepath.Join(".claude", "agents", "canon-critic.md"),
+		filepath.Join(".codex", "agents", "canon-critic.toml"),
 	})
 }
 
@@ -532,6 +548,54 @@ func TestSkillInstallRepeatedTargetsAndCodex(t *testing.T) {
 		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
 		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
 		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
+		filepath.Join(".codex", "agents", "canon-critic.toml"),
+	})
+
+	code, env = runForTest(t, "skill", "install", "--agent", "codex")
+	if code != exitOK {
+		t.Fatalf("codex install code=%d env=%#v", code, env)
+	}
+	codexPath := filepath.Join(".codex", "agents", "canon-critic.toml")
+	content, err := os.ReadFile(codexPath)
+	if err != nil {
+		t.Fatalf("read codex agent: %v", err)
+	}
+	for _, want := range []string{
+		`name = "canon-critic"`,
+		`sandbox_mode = "read-only"`,
+		`developer_instructions = "You are a canon corpus critic:`,
+		`# canon-skill-version: 2`,
+		`# canon-skill-hash: sha256:`,
+		"canon-record-gate",
+	} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("codex agent missing %q:\n%s", want, content)
+		}
+	}
+	for _, path := range []string{filepath.Join(".claude", "agents", "canon-critic.md"), filepath.Join(".opencode", "agents", "canon-critic.md")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("unselected agent target %s exists: %v", path, err)
+		}
+	}
+}
+
+func TestSkillInstallInfersCodexTarget(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	if err := os.Mkdir(".codex", 0o755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+
+	code, env := runForTest(t, "skill", "install", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("dry-run code=%d env=%#v", code, env)
+	}
+	operations := envelopePlan(env)["operations"].([]any)
+	assertPlanPaths(t, operations, []string{
+		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
+		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
+		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
+		filepath.Join(".codex", "agents", "canon-critic.toml"),
 	})
 }
 
@@ -773,6 +837,67 @@ func TestSkillUpdateRefusesLocalModificationWithoutForce(t *testing.T) {
 	}
 }
 
+func TestSkillUpdateProtectsCodexAgent(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	if code, env := runForTest(t, "skill", "install", "--agent", "codex"); code != exitOK {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+
+	code, env := runForTest(t, "skill", "update", "--agent", "codex", "--dry-run")
+	if code != exitOK || env["status"] != "planned" {
+		t.Fatalf("current update code=%d env=%#v", code, env)
+	}
+	for _, raw := range envelopePlan(env)["operations"].([]any) {
+		if raw.(map[string]any)["action"] != "noop" {
+			t.Fatalf("current bundle operation = %#v", raw)
+		}
+	}
+
+	target := filepath.Join(".codex", "agents", "canon-critic.toml")
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read codex agent: %v", err)
+	}
+	older := testManagedCodexAgentVersion(t, string(content), "1")
+	if err := os.WriteFile(target, []byte(older), 0o644); err != nil {
+		t.Fatalf("write older codex agent: %v", err)
+	}
+
+	code, env = runForTest(t, "skill", "update", "--agent", "codex", "--dry-run")
+	if code != exitOK || env["status"] != "planned" {
+		t.Fatalf("older update code=%d env=%#v", code, env)
+	}
+	var sawCodexUpdate bool
+	for _, raw := range envelopePlan(env)["operations"].([]any) {
+		operation := raw.(map[string]any)
+		if operation["path"] == target && operation["action"] == "update_file" {
+			sawCodexUpdate = true
+		}
+	}
+	if !sawCodexUpdate {
+		t.Fatalf("older Codex agent was not planned for update: %#v", envelopePlan(env)["operations"])
+	}
+	if code, env = runForTest(t, "skill", "update", "--agent", "codex"); code != exitOK {
+		t.Fatalf("apply older update code=%d env=%#v", code, env)
+	}
+	content, err = os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read updated codex agent: %v", err)
+	}
+	if err := os.WriteFile(target, append(content, []byte("# local edit\n")...), 0o644); err != nil {
+		t.Fatalf("edit codex agent: %v", err)
+	}
+
+	code, env = runForTest(t, "skill", "update", "--agent", "codex", "--dry-run")
+	if code != exitState {
+		t.Fatalf("modified update code=%d env=%#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "local_skill_modified" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+}
+
 func TestSkillUpdateRequiresAnInstalledSelection(t *testing.T) {
 	project := t.TempDir()
 	t.Chdir(project)
@@ -1009,6 +1134,32 @@ description: Manage Architecture Decision Records with the canon CLI in agent-le
 	sum := sha256.Sum256([]byte(payload))
 	hash := "sha256:" + fmt.Sprintf("%x", sum[:])
 	return strings.Replace(payload, "<!-- canon-skill-version: 0 -->\n", "<!-- canon-skill-version: 0 -->\n<!-- canon-skill-hash: "+hash+" -->\n", 1)
+}
+
+func testManagedCodexAgentVersion(t *testing.T, content, version string) string {
+	t.Helper()
+	lines := strings.Split(content, "\n")
+	baseLines := make([]string, 0, len(lines))
+	versionIndex := -1
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "# canon-skill-version:"):
+			versionIndex = len(baseLines)
+			baseLines = append(baseLines, "# canon-skill-version: "+version)
+		case strings.HasPrefix(line, "# canon-skill-hash:"):
+			continue
+		default:
+			baseLines = append(baseLines, line)
+		}
+	}
+	if versionIndex < 0 {
+		t.Fatal("Codex agent has no managed version marker")
+	}
+	base := strings.Join(baseLines, "\n")
+	sum := sha256.Sum256([]byte(base))
+	hashLine := "# canon-skill-hash: sha256:" + fmt.Sprintf("%x", sum[:])
+	baseLines = append(baseLines[:versionIndex+1], append([]string{hashLine}, baseLines[versionIndex+1:]...)...)
+	return strings.Join(baseLines, "\n")
 }
 
 func runKindTest(t *testing.T, args ...string) (int, map[string]any) {

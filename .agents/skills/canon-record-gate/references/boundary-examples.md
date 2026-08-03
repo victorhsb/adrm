@@ -1,5 +1,5 @@
-<!-- canon-skill-version: 1 -->
-<!-- canon-skill-hash: sha256:b68d8749af3eef04f1018e395a1304bca3ee6e16ea7aa20e0abc9463854ca930 -->
+<!-- canon-skill-version: 2 -->
+<!-- canon-skill-hash: sha256:03000a23e13ce852b888e6908a0bbb222d7a774f0de2dcf99f2b6c1ded81fbfa -->
 
 # Boundary Examples
 

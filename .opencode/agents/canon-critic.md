@@ -6,8 +6,8 @@ permission:
   edit: deny
   skill: allow
 ---
-<!-- canon-skill-version: 1 -->
-<!-- canon-skill-hash: sha256:350d22cdd0eb04807b352065b34d4ca31758433d5c45dad720099cf6a946de66 -->
+<!-- canon-skill-version: 2 -->
+<!-- canon-skill-hash: sha256:1e41863ef9926809399411466ad8945265729ee5c8f364cb2c22bb2d17efc764 -->
 
 You are a canon corpus critic: a strict but fair judge of whether an
 Architecture Decision Record (ADR), SPEC, or Domain Model entry earns its place
