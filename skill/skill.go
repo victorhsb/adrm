@@ -2,18 +2,102 @@ package skill
 
 import (
 	"crypto/sha256"
+	"embed"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
 const (
-	Name              = "canon"
-	Version           = "9"
-	FileName          = "SKILL.md"
-	DefaultInstallDir = ".agents/skills/canon"
+	KindSkill = "skill"
+	KindAgent = "agent"
+
+	TargetOpenCode = "opencode"
+	TargetClaude   = "claude"
+	TargetCodex    = "codex"
+
+	AgentName         = "canon-critic"
+	DefaultSkillsRoot = ".agents/skills"
 )
 
+// DefaultInstallDir is kept as the CLI-facing name for the bundle's skill root.
+const DefaultInstallDir = DefaultSkillsRoot
+
+// ErrUnsupportedTarget marks an agent target outside the first-party set.
+var ErrUnsupportedTarget = errors.New("unsupported agent target")
+
+//go:embed assets/canon/SKILL.md assets/canon-record-gate/SKILL.md assets/canon-record-gate/references/boundary-examples.md assets/canon-record-gate/agent.md
+var bundledAssets embed.FS
+
+type payloadFile struct {
+	relativePath string
+	sourcePath   string
+}
+
+type agentSpec struct {
+	name       string
+	sourcePath string
+}
+
+type assetSpec struct {
+	name    string
+	version string
+	files   []payloadFile
+	agent   *agentSpec
+}
+
+var assetSpecs = []assetSpec{
+	{
+		name:    "canon",
+		version: "10",
+		files: []payloadFile{
+			{relativePath: "SKILL.md", sourcePath: "assets/canon/SKILL.md"},
+		},
+	},
+	{
+		name:    "canon-record-gate",
+		version: "1",
+		files: []payloadFile{
+			{relativePath: "SKILL.md", sourcePath: "assets/canon-record-gate/SKILL.md"},
+			{relativePath: "references/boundary-examples.md", sourcePath: "assets/canon-record-gate/references/boundary-examples.md"},
+		},
+		agent: &agentSpec{name: AgentName, sourcePath: "assets/canon-record-gate/agent.md"},
+	},
+}
+
+// CatalogAsset describes one public bundle asset. Agent renderings are
+// components of their owning skill and therefore do not appear as assets.
+type CatalogAsset struct {
+	Name        string   `json:"name"`
+	Kind        string   `json:"kind"`
+	Version     string   `json:"version"`
+	Hash        string   `json:"hash"`
+	TargetPaths []string `json:"target_paths"`
+}
+
+// ManagedFile is one installable file rendered from the bundle.
+type ManagedFile struct {
+	AssetName    string
+	Kind         string
+	RelativePath string
+	Path         string
+	Version      string
+
+	baseContent string
+	hash        string
+}
+
+func (f ManagedFile) Content() string {
+	return insertHashMarker(f.baseContent, f.hash)
+}
+
+func (f ManagedFile) Hash() string {
+	return f.hash
+}
+
+// Inspection describes how installed content relates to one desired file.
 type Inspection struct {
 	Version      string
 	DeclaredHash string
@@ -23,24 +107,149 @@ type Inspection struct {
 	Modified     bool
 }
 
-func TargetPath(dir string) string {
-	if strings.TrimSpace(dir) == "" {
-		dir = DefaultInstallDir
+// Catalog returns the bundle's public assets in deterministic order.
+func Catalog() []CatalogAsset {
+	assets := make([]CatalogAsset, 0, len(assetSpecs))
+	for _, spec := range sortedAssetSpecs() {
+		assets = append(assets, CatalogAsset{
+			Name:        spec.name,
+			Kind:        KindSkill,
+			Version:     spec.version,
+			Hash:        assetHash(spec),
+			TargetPaths: catalogTargetPaths(spec),
+		})
 	}
-	return filepath.Join(dir, FileName)
+	return assets
 }
 
-func Content() string {
-	payload := managedPayload()
-	return strings.Replace(payload, versionComment()+"\n", versionComment()+"\n"+hashComment(Hash())+"\n", 1)
+// AssetNames returns all public asset names in catalog order.
+func AssetNames() []string {
+	specs := sortedAssetSpecs()
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		names = append(names, spec.name)
+	}
+	return names
 }
 
-func Hash() string {
-	sum := sha256.Sum256([]byte(managedPayload()))
-	return "sha256:" + fmt.Sprintf("%x", sum[:])
+// SupportedTargets returns all first-party agent targets in deterministic order.
+func SupportedTargets() []string {
+	return []string{TargetOpenCode, TargetClaude, TargetCodex}
 }
 
-func Inspect(content string) Inspection {
+// SelectAssets validates and deduplicates asset names. An empty selection
+// selects the full catalog.
+func SelectAssets(names []string) ([]string, error) {
+	valid := make(map[string]bool, len(assetSpecs))
+	for _, name := range AssetNames() {
+		valid[name] = true
+	}
+	if len(names) == 0 {
+		return AssetNames(), nil
+	}
+	selected := make(map[string]bool, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !valid[name] {
+			return nil, fmt.Errorf("unknown bundled skill asset %q", name)
+		}
+		selected[name] = true
+	}
+	ordered := make([]string, 0, len(selected))
+	for _, name := range AssetNames() {
+		if selected[name] {
+			ordered = append(ordered, name)
+		}
+	}
+	return ordered, nil
+}
+
+// NormalizeTargets validates and deduplicates target names.
+func NormalizeTargets(targets []string) ([]string, error) {
+	valid := make(map[string]bool, len(SupportedTargets()))
+	for _, target := range SupportedTargets() {
+		valid[target] = true
+	}
+	selected := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		target = strings.TrimSpace(target)
+		if !valid[target] {
+			return nil, fmt.Errorf("%w %q", ErrUnsupportedTarget, target)
+		}
+		selected[target] = true
+	}
+	ordered := make([]string, 0, len(selected))
+	for _, target := range SupportedTargets() {
+		if selected[target] {
+			ordered = append(ordered, target)
+		}
+	}
+	return ordered, nil
+}
+
+// AgentPath returns the project-relative discovery path for a target. Codex is
+// a valid target but currently has no managed agent discovery file.
+func AgentPath(target string) (string, error) {
+	switch target {
+	case TargetOpenCode:
+		return filepath.Join(".opencode", "agents", AgentName+".md"), nil
+	case TargetClaude:
+		return filepath.Join(".claude", "agents", AgentName+".md"), nil
+	case TargetCodex:
+		return "", nil
+	default:
+		return "", fmt.Errorf("%w %q", ErrUnsupportedTarget, target)
+	}
+}
+
+// ManagedFiles renders all files for the selected assets and agent targets.
+func ManagedFiles(assetNames []string, skillsRoot string, targets []string) ([]ManagedFile, error) {
+	selectedAssets, err := SelectAssets(assetNames)
+	if err != nil {
+		return nil, err
+	}
+	selectedTargets, err := NormalizeTargets(targets)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(skillsRoot) == "" {
+		skillsRoot = DefaultSkillsRoot
+	}
+
+	files := make([]ManagedFile, 0)
+	for _, assetName := range selectedAssets {
+		spec := mustAssetSpec(assetName)
+		for _, payload := range spec.files {
+			source := normalizeContent(readAsset(payload.sourcePath))
+			path := filepath.Join(skillsRoot, spec.name, filepath.FromSlash(payload.relativePath))
+			files = append(files, newManagedFile(spec.name, KindSkill, payload.relativePath, path, spec.version, source))
+		}
+		if spec.agent == nil {
+			continue
+		}
+		agentSource := normalizeContent(readAsset(spec.agent.sourcePath))
+		for _, target := range selectedTargets {
+			path, err := AgentPath(target)
+			if err != nil {
+				return nil, err
+			}
+			if path == "" {
+				continue
+			}
+			rendered, err := renderAgent(target, agentSource)
+			if err != nil {
+				return nil, err
+			}
+			relativePath := "agents/" + target + "/" + spec.agent.name + ".md"
+			files = append(files, newManagedFile(spec.name, KindAgent, relativePath, path, spec.version, rendered))
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
+}
+
+// Inspect compares installed content with one desired managed file.
+func Inspect(content string, desired ManagedFile) Inspection {
 	inspection := Inspection{ActualHash: hashWithoutHashComment(content)}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
@@ -52,9 +261,142 @@ func Inspect(content string) Inspection {
 		}
 	}
 	inspection.Managed = inspection.Version != "" && inspection.DeclaredHash != "" && inspection.DeclaredHash == inspection.ActualHash
-	inspection.Current = content == Content()
+	inspection.Current = content == desired.Content()
 	inspection.Modified = inspection.DeclaredHash != "" && inspection.DeclaredHash != inspection.ActualHash
 	return inspection
+}
+
+func sortedAssetSpecs() []assetSpec {
+	specs := append([]assetSpec(nil), assetSpecs...)
+	sort.Slice(specs, func(i, j int) bool { return specs[i].name < specs[j].name })
+	return specs
+}
+
+func mustAssetSpec(name string) assetSpec {
+	for _, spec := range assetSpecs {
+		if spec.name == name {
+			return spec
+		}
+	}
+	panic("unknown embedded skill asset: " + name)
+}
+
+func readAsset(path string) string {
+	content, err := bundledAssets.ReadFile(path)
+	if err != nil {
+		panic("read embedded skill asset " + path + ": " + err.Error())
+	}
+	return string(content)
+}
+
+func newManagedFile(assetName, kind, relativePath, path, version, source string) ManagedFile {
+	base := insertVersionMarker(source, version)
+	return ManagedFile{
+		AssetName:    assetName,
+		Kind:         kind,
+		RelativePath: relativePath,
+		Path:         path,
+		Version:      version,
+		baseContent:  base,
+		hash:         hashContent(base),
+	}
+}
+
+func catalogTargetPaths(spec assetSpec) []string {
+	paths := make([]string, 0, len(spec.files)+len(SupportedTargets()))
+	for _, payload := range spec.files {
+		paths = append(paths, filepath.Join(DefaultSkillsRoot, spec.name, filepath.FromSlash(payload.relativePath)))
+	}
+	if spec.agent != nil {
+		for _, target := range []string{TargetOpenCode, TargetClaude} {
+			path, err := AgentPath(target)
+			if err == nil && path != "" {
+				paths = append(paths, path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func assetHash(spec assetSpec) string {
+	type hashedPayload struct {
+		path string
+		hash string
+	}
+	payloads := make([]hashedPayload, 0, len(spec.files)+1)
+	for _, payload := range spec.files {
+		payloads = append(payloads, hashedPayload{path: payload.relativePath, hash: hashContent(normalizeContent(readAsset(payload.sourcePath)))})
+	}
+	if spec.agent != nil {
+		payloads = append(payloads, hashedPayload{
+			path: "agents/" + spec.agent.name + ".md",
+			hash: hashContent(normalizeContent(readAsset(spec.agent.sourcePath))),
+		})
+	}
+	sort.Slice(payloads, func(i, j int) bool { return payloads[i].path < payloads[j].path })
+
+	h := sha256.New()
+	for _, payload := range payloads {
+		_, _ = h.Write([]byte(payload.path))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(payload.hash))
+		_, _ = h.Write([]byte{0})
+	}
+	return "sha256:" + fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func renderAgent(target, body string) (string, error) {
+	const description = "Judges whether an ADR, SPEC, or Domain entry in a canon corpus earns its place. Use when asked to review, audit, gate, or stress-test a canon document before creation or after acceptance. Read-only: returns a structured verdict and never mutates the corpus."
+
+	var frontmatter string
+	switch target {
+	case TargetOpenCode:
+		frontmatter = "---\n" +
+			"name: " + AgentName + "\n" +
+			"description: \"" + description + "\"\n" +
+			"mode: subagent\n" +
+			"permission:\n" +
+			"  edit: deny\n" +
+			"  skill: allow\n" +
+			"---\n\n"
+	case TargetClaude:
+		frontmatter = "---\n" +
+			"name: " + AgentName + "\n" +
+			"description: " + description + "\n" +
+			"tools: Read, Grep, Glob, Bash\n" +
+			"model: inherit\n" +
+			"---\n\n"
+	default:
+		return "", fmt.Errorf("no agent rendering for target %q", target)
+	}
+	return frontmatter + body, nil
+}
+
+func normalizeContent(content string) string {
+	return strings.TrimSpace(content) + "\n"
+}
+
+func insertVersionMarker(source, version string) string {
+	marker := versionComment(version)
+	if strings.HasPrefix(source, "---\n") {
+		if idx := strings.Index(source[len("---\n"):], "\n---\n"); idx >= 0 {
+			insertAt := len("---\n") + idx + len("\n---\n")
+			return source[:insertAt] + marker + "\n" + source[insertAt:]
+		}
+	}
+	return marker + "\n\n" + source
+}
+
+func insertHashMarker(base, hash string) string {
+	lines := strings.Split(base, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "<!-- canon-skill-version:") {
+			lines = append(lines[:i+1], append([]string{hashComment(hash)}, lines[i+1:]...)...)
+			break
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func hashWithoutHashComment(content string) string {
@@ -67,95 +409,16 @@ func hashWithoutHashComment(content string) string {
 		}
 		kept = append(kept, line)
 	}
-	sum := sha256.Sum256([]byte(strings.Join(kept, "\n")))
+	return hashContent(strings.Join(kept, "\n"))
+}
+
+func hashContent(content string) string {
+	sum := sha256.Sum256([]byte(content))
 	return "sha256:" + fmt.Sprintf("%x", sum[:])
 }
 
-func managedPayload() string {
-	return strings.TrimSpace(`---
-name: canon
-description: Manage Architecture Decision Records (ADRs), SPECs, and domain entries with the canon CLI. Use whenever creating, recording, or revisiting an architectural decision; defining or updating a canonical domain concept; transitioning an ADR, SPEC, or domain entry through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history or the domain model; or initializing document storage - even if the user does not mention canon by name.
----
-`+versionComment()+`
-
-# CANON Agent Skill
-
-Use canon to manage Architecture Decision Records without guessing repository state.
-
-## Operating rules
-
-1. Start with `+"`canon commands`"+` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `+"`canon doctor`"+` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `+"`canon adr init --dry-run`"+`, `+"`canon spec init --dry-run`"+`, or `+"`canon domain init --dry-run`"+` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `+"`canon validate`"+` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
-3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `+"`canon --format context adr list --status accepted`"+` emits concise Markdown; use context format only with list commands. Every JSON response has `+"`schema_version`"+`, `+"`status`"+`, `+"`data`"+`, and optional `+"`error`"+` / `+"`next_actions`"+`.
-4. For every mutating command, run the same command with `+"`--dry-run`"+` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `+"`No changes were made.`"+` in warnings.
-5. Use `+"`canon list`"+` (all kinds), `+"`canon adr list`"+` / `+"`canon spec list`"+` / `+"`canon domain list`"+`, `+"`canon search --query ...`"+`, and `+"`canon show --id ...`"+` to gather context before changing a document.
-6. Prefer selectors from CLI output. Document ids are stable strings like `+"`ADR-0001`"+`, `+"`SPEC-0001`"+`, and `+"`DM-0001`"+` and can be passed to `+"`--id`"+` or `+"`--by`"+`.
-
-## Common commands
-
-Preview each of these with `+"`--dry-run`"+` first (rule 4), then apply:
-
-`+"```sh"+`
-canon adr new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."
-canon spec new --title "Local query index" --requirements "Return ADRs by tag." --acceptance "canon list --tag storage returns ADR-0001."
-canon domain new --title "ADR" --definition "A dated, narrowly-scoped architecture commitment." --avoid "design doc: too broad; ticket: tracks work, not decisions"
-canon accept --id ADR-0001 --reason "Approved by the team."
-canon reject --id ADR-0001 --reason "Chose a different approach."
-canon supersede --id ADR-0001 --by ADR-0002 --reason "ADR-0002 captures the current storage approach."
-canon deprecate --id ADR-0003 --reason "The system no longer uses this component."
-canon append --id ADR-0002 --title "Implementation note" --body "The initial rollout used the default local index."
-canon skill install
-canon skill update
-`+"```"+`
-
-## When to create or change an ADR
-
-`+"`canon`"+` stores *Architecture Decision Records*, not plans, tickets, or changelogs. Use an ADR when these four tests are all true:
-
-1. **It is a commitment, not an intention.** Past-tense: "We decided X". Not "We will add X".
-2. **It is architectural.** It shapes the system's structure, contract, data model, or cross-cutting policy, and reversal would ripple.
-3. **It is non-obvious.** Reasonable people might choose differently, so the reasoning is worth preserving.
-4. **It is narrow.** One ADR per decision. Bundles hide the real tradeoff.
-
-### Technical vs product decisions
-
-A pure product decision (market, prioritization, pricing) is **not** architecture and does not belong in an ADR. It belongs in an ADR only when it **forces an architectural commitment**. In that case, the product driver goes in **Context** as a force, and the **Decision** is the architectural commitment it produced.
-
-### `+"`canon`"+` trigger list
-
-Decisions that affect the CLI contract, ADR file format, query behavior, lifecycle semantics, output schema, or storage layout are architectural when they establish structural or cross-cutting commitments. Project processes, agent workflows, and skill behavior belong in `+"`AGENTS.md`"+` or the relevant `+"`SKILL.md`"+`, not in ADRs.
-
-### Anti-patterns
-
-Do not create an ADR for:
-
-- a roadmap ("we will add A, B, C")
-- a ticket ("add command X")
-- a changelog entry ("implemented back-references")
-- a bundle of unrelated decisions
-- a product strategy with no architectural consequence
-- a project process, agent workflow, or skill instruction
-- vague commitments ("be flexible")
-- obvious decisions with no real alternatives
-
-## When to create or change a domain entry
-
-Domain entries are the project's single source of truth for what things mean: one canonical concept per entry, with a definition, avoided terms (each with a reason), and relationships to other entries as relative markdown links.
-
-1. **Search before defining.** Run `+"`canon domain search --query ...`"+` first; if an entry exists, sharpen it instead of creating a parallel one.
-2. **One concept per entry.** The title is the canonical term. Do not bundle several terms into one entry.
-3. **Definitions carry no implementation details.** An entry says what a concept is, not how it is built.
-4. **Record rejected wording.** Every avoided term gets a reason, so future readers know why "design doc" is not an ADR.
-5. **Supersede is for redefinitions.** Renaming a concept retitles the same entry (title is content, not lifecycle metadata) plus a `+"`canon append`"+` history note; a changed meaning gets a new entry superseding the old.
-
-## Recovery
-
-If a command fails, read `+"`error.code`"+`, `+"`error.category`"+`, and `+"`error.suggested_fix`"+`. Prefer the suggested next diagnostic command over guessing. For missing or unreadable ADR state, run `+"`canon doctor`"+`.
-`) + "\n"
-}
-
-func versionComment() string {
-	return "<!-- canon-skill-version: " + Version + " -->"
+func versionComment(version string) string {
+	return "<!-- canon-skill-version: " + version + " -->"
 }
 
 func hashComment(hash string) string {

@@ -280,26 +280,30 @@ func renderMutationText(out io.Writer, payload map[string]any) {
 
 func renderSkillText(out io.Writer, payload map[string]any) {
 	var data struct {
-		Name    string         `json:"filename"`
-		Content string         `json:"content"`
-		Skill   map[string]any `json:"skill"`
+		Assets []struct {
+			Name        string   `json:"name"`
+			Kind        string   `json:"kind"`
+			Version     string   `json:"version"`
+			Hash        string   `json:"hash"`
+			TargetPaths []string `json:"target_paths"`
+		} `json:"assets"`
+		DefaultSkillDir string `json:"default_skill_dir"`
 	}
 	if !jsonCopy(payload, &data) {
 		return
 	}
-	fmt.Fprintf(out, "filename: %s\n", data.Name)
-	if name, ok := data.Skill["name"].(string); ok {
-		fmt.Fprintf(out, "skill: %s\n", name)
-	}
-	if version, ok := data.Skill["version"].(string); ok {
-		fmt.Fprintf(out, "version: %s\n", version)
-	}
-	if hash, ok := data.Skill["hash"].(string); ok {
-		fmt.Fprintf(out, "hash: %s\n", hash)
-	}
-	if data.Content != "" {
-		fmt.Fprintln(out, "---")
-		fmt.Fprintln(out, data.Content)
+	fmt.Fprintf(out, "default_skill_dir: %s\n", data.DefaultSkillDir)
+	fmt.Fprintln(out, "assets:")
+	for _, asset := range data.Assets {
+		fmt.Fprintf(out, "  %s [%s]\n", asset.Name, asset.Kind)
+		fmt.Fprintf(out, "    version: %s\n", asset.Version)
+		fmt.Fprintf(out, "    hash: %s\n", asset.Hash)
+		if len(asset.TargetPaths) > 0 {
+			fmt.Fprintln(out, "    target paths:")
+			for _, path := range asset.TargetPaths {
+				fmt.Fprintf(out, "      %s\n", path)
+			}
+		}
 	}
 }
 

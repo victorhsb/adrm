@@ -958,17 +958,11 @@ func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 		writeEnvelope(stdout, Envelope{
 			Command: "skill",
 			Data: map[string]any{
-				"filename": skill.FileName,
-				"content":  skill.Content(),
-				"skill": map[string]any{
-					"name":                skill.Name,
-					"version":             skill.Version,
-					"hash":                skill.Hash(),
-					"default_install_dir": skill.DefaultInstallDir,
-				},
+				"assets":            skill.Catalog(),
+				"default_skill_dir": skill.DefaultInstallDir,
 			},
 			NextActions: []NextAction{
-				{Command: "canon skill install --dry-run", Description: "Preview installing the repository-local agent skill.", Safety: "preview"},
+				{Command: "canon skill install --dry-run", Description: "Preview installing the bundled agent skills and subagent components.", Safety: "preview"},
 				{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
 			},
 		}, opts.Format)
@@ -987,44 +981,72 @@ func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 
 func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	fs := newCommandFlagSet(stderr, "skill install")
-	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill installation directory")
+	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill bundle installation root")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
+	var onlyFlags stringListFlag
+	var agentFlags stringListFlag
+	fs.Var(&onlyFlags, "only", "install only the named bundled skill asset (repeatable)")
+	fs.Var(&agentFlags, "agent", "select an agent target: opencode, claude, or codex (repeatable)")
 	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("skill install", err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
 	}
-	target := skill.TargetPath(*skillDir)
-	if _, err := os.Stat(target); err == nil {
-		writeEnvelope(stdout, errorEnvelope("skill install", "skill_already_installed", "state", fmt.Sprintf("%s already exists", target), "Use `canon skill update --dry-run` to preview updating the installed skill."), opts.Format)
-		return exitState
-	} else if !os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope("skill install", "skill_stat_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
-		return exitIO
+	if fs.NArg() != 0 {
+		writeEnvelope(stdout, usageError("skill install", fmt.Sprintf("unexpected arguments: %s", strings.Join(fs.Args(), " "))), opts.Format)
+		return exitUsage
 	}
-	plan := skillWritePlan(*dryRun, target, "Install CANON agent skill.")
+
+	selectedAssets, err := skill.SelectAssets(onlyFlags)
+	if err != nil {
+		writeEnvelope(stdout, usageError("skill install", err.Error()), opts.Format)
+		return exitUsage
+	}
+	targets, err := resolveSkillTargets(agentFlags)
+	if err != nil {
+		writeEnvelope(stdout, skillTargetError("skill install", err), opts.Format)
+		return skillTargetExitCode(err)
+	}
+	files, err := skill.ManagedFiles(selectedAssets, *skillDir, targets)
+	if err != nil {
+		writeEnvelope(stdout, usageError("skill install", err.Error()), opts.Format)
+		return exitUsage
+	}
+
+	conflicts := make([]string, 0)
+	for _, file := range files {
+		if _, err := os.Stat(file.Path); err == nil {
+			conflicts = append(conflicts, file.Path)
+		} else if !os.IsNotExist(err) {
+			writeEnvelope(stdout, errorEnvelope("skill install", "skill_stat_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
+			return exitIO
+		}
+	}
+	if len(conflicts) > 0 {
+		writeEnvelope(stdout, errorEnvelope("skill install", "skill_already_installed", "state", fmt.Sprintf("managed target files already exist: %s", strings.Join(conflicts, ", ")), "Use `canon skill update --dry-run` to preview updating the installed bundle."), opts.Format)
+		return exitState
+	}
+
+	plan := skillInstallPlan(*dryRun, files)
+	applyCommand := skillInstallApplyCommand(*skillDir, commandAssetSelection(onlyFlags, selectedAssets), targets)
 	if *dryRun {
-		writeEnvelope(stdout, skillDryRunEnvelope("skill install", plan, target, skillInstallApplyCommand(*skillDir)), opts.Format)
+		writeEnvelope(stdout, skillDryRunEnvelope("skill install", plan, files, targets, applyCommand), opts.Format)
 		return exitOK
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		writeEnvelope(stdout, errorEnvelope("skill install", "skill_directory_create_failed", "io", err.Error(), "Check directory permissions or choose another --skill-dir."), opts.Format)
-		return exitIO
-	}
-	if err := os.WriteFile(target, []byte(skill.Content()), 0o644); err != nil {
-		writeEnvelope(stdout, errorEnvelope("skill install", "skill_write_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
-		return exitIO
+	if exitCode := writeSkillFiles(stdout, opts, "skill install", files); exitCode != exitOK {
+		return exitCode
 	}
 	plan.ChangesMade = true
 	writeEnvelope(stdout, Envelope{
 		Command: "skill install",
 		Data: map[string]any{
-			"plan":  plan,
-			"skill": skillMetadata(target),
+			"plan":    plan,
+			"assets":  skillSelectedMetadata(files),
+			"targets": targets,
 		},
 		NextActions: []NextAction{
-			{Command: fmt.Sprintf("canon skill update --skill-dir %s --dry-run", quoteForNextAction(*skillDir)), Description: "Preview updating the installed skill later.", Safety: "preview"},
+			{Command: skillUpdatePreviewCommand(*skillDir, commandAssetSelection(onlyFlags, selectedAssets), targets), Description: "Preview updating the installed bundle later.", Safety: "preview"},
 			{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
 		},
 	}, opts.Format)
@@ -1033,88 +1055,190 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 
 func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	fs := newCommandFlagSet(stderr, "skill update")
-	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill installation directory")
+	skillDir := fs.String("skill-dir", skill.DefaultInstallDir, "skill bundle installation root")
 	dryRun := fs.Bool("dry-run", false, "preview changes")
-	force := fs.Bool("force", false, "overwrite locally modified skill file")
+	force := fs.Bool("force", false, "overwrite locally modified managed files")
+	var onlyFlags stringListFlag
+	var agentFlags stringListFlag
+	fs.Var(&onlyFlags, "only", "update only the named bundled skill asset (repeatable)")
+	fs.Var(&agentFlags, "agent", "select an agent target: opencode, claude, or codex (repeatable)")
 	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError("skill update", err.Error()), opts.Format)
 		return exitUsage
 	} else if help {
 		return exitOK
 	}
-	target := skill.TargetPath(*skillDir)
-	content, err := os.ReadFile(target)
-	if os.IsNotExist(err) {
-		writeEnvelope(stdout, errorEnvelope("skill update", "skill_not_installed", "state", fmt.Sprintf("%s does not exist", target), "Use `canon skill install --dry-run` to preview installing it."), opts.Format)
+	if fs.NArg() != 0 {
+		writeEnvelope(stdout, usageError("skill update", fmt.Sprintf("unexpected arguments: %s", strings.Join(fs.Args(), " "))), opts.Format)
+		return exitUsage
+	}
+
+	selectedAssets, err := skill.SelectAssets(onlyFlags)
+	if err != nil {
+		writeEnvelope(stdout, usageError("skill update", err.Error()), opts.Format)
+		return exitUsage
+	}
+	targets, err := resolveSkillTargets(agentFlags)
+	if err != nil {
+		writeEnvelope(stdout, skillTargetError("skill update", err), opts.Format)
+		return skillTargetExitCode(err)
+	}
+	files, err := skill.ManagedFiles(selectedAssets, *skillDir, targets)
+	if err != nil {
+		writeEnvelope(stdout, usageError("skill update", err.Error()), opts.Format)
+		return exitUsage
+	}
+
+	states := make([]skillFileState, 0, len(files))
+	existing := 0
+	blocked := make([]string, 0)
+	for _, file := range files {
+		state := skillFileState{File: file}
+		content, err := os.ReadFile(file.Path)
+		if os.IsNotExist(err) {
+			state.Missing = true
+			states = append(states, state)
+			continue
+		}
+		if err != nil {
+			writeEnvelope(stdout, errorEnvelope("skill update", "skill_read_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
+			return exitIO
+		}
+		existing++
+		state.Inspection = skill.Inspect(string(content), file)
+		if !state.Inspection.Current && !state.Inspection.Managed && !*force {
+			blocked = append(blocked, file.Path)
+		}
+		states = append(states, state)
+	}
+	if existing == 0 {
+		writeEnvelope(stdout, errorEnvelope("skill update", "skill_not_installed", "state", "no selected managed bundle files are installed", "Use `canon skill install --dry-run` to preview installing the bundle."), opts.Format)
 		return exitNotFound
 	}
-	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("skill update", "skill_read_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
-		return exitIO
-	}
-	inspection := skill.Inspect(string(content))
-	if inspection.Current {
-		writeEnvelope(stdout, Envelope{
-			Command: "skill update",
-			Data: map[string]any{
-				"plan":  skillNoopPlan(target),
-				"skill": skillMetadata(target),
-			},
-			NextActions: []NextAction{{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
-		}, opts.Format)
-		return exitOK
-	}
-	if !inspection.Managed && !*force {
-		writeEnvelope(stdout, errorEnvelope("skill update", "local_skill_modified", "state", fmt.Sprintf("%s is not an unmodified CANON-managed skill file", target), "Review the file, then retry with `canon skill update --force --dry-run` if overwriting is acceptable."), opts.Format)
+	if len(blocked) > 0 {
+		writeEnvelope(stdout, errorEnvelope("skill update", "local_skill_modified", "state", fmt.Sprintf("managed target files are locally modified or unmanaged: %s", strings.Join(blocked, ", ")), "Review the files, then retry with `canon skill update --force --dry-run` if overwriting is acceptable."), opts.Format)
 		return exitState
 	}
-	plan := skillWritePlan(*dryRun, target, "Update CANON agent skill.")
+
+	plan := skillUpdatePlan(*dryRun, states, *force)
+	applyCommand := skillUpdateApplyCommand(*skillDir, commandAssetSelection(onlyFlags, selectedAssets), targets, *force)
 	if *dryRun {
-		writeEnvelope(stdout, skillDryRunEnvelope("skill update", plan, target, forceAwareApplyCommand(*skillDir, *force)), opts.Format)
+		writeEnvelope(stdout, skillDryRunEnvelope("skill update", plan, files, targets, applyCommand), opts.Format)
 		return exitOK
 	}
-	if err := os.WriteFile(target, []byte(skill.Content()), 0o644); err != nil {
-		writeEnvelope(stdout, errorEnvelope("skill update", "skill_write_failed", "io", err.Error(), "Check file permissions or choose another --skill-dir."), opts.Format)
-		return exitIO
+	if exitCode := writeSkillFileStates(stdout, opts, "skill update", states); exitCode != exitOK {
+		return exitCode
 	}
-	plan.ChangesMade = true
+	for _, state := range states {
+		if state.Missing || !state.Inspection.Current {
+			plan.ChangesMade = true
+			break
+		}
+	}
 	writeEnvelope(stdout, Envelope{
 		Command: "skill update",
 		Data: map[string]any{
-			"plan":  plan,
-			"skill": skillMetadata(target),
+			"plan":    plan,
+			"assets":  skillSelectedMetadata(files),
+			"targets": targets,
 		},
 		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
 
-func skillWritePlan(dryRun bool, target, description string) Plan {
-	action := "write_file"
-	operations := []OpPlan{
-		{Action: "mkdir", Path: filepath.Dir(target), Description: "Create skill directory if missing."},
-		{Action: action, Path: target, Description: description},
+type stringListFlag []string
+
+func (f *stringListFlag) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *stringListFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+type skillFileState struct {
+	File       skill.ManagedFile
+	Inspection skill.Inspection
+	Missing    bool
+}
+
+func resolveSkillTargets(flagValues []string) ([]string, error) {
+	if len(flagValues) > 0 {
+		return skill.NormalizeTargets(flagValues)
 	}
-	if strings.HasPrefix(description, "Update ") {
-		action = "update_file"
-		operations = []OpPlan{{Action: action, Path: target, Description: description}}
+	inferred := make([]string, 0, len(skill.SupportedTargets()))
+	for _, target := range skill.SupportedTargets() {
+		info, err := os.Stat("." + target)
+		if err == nil {
+			if info.IsDir() {
+				inferred = append(inferred, target)
+			}
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("inspect %s target directory: %w", target, err)
+		}
+	}
+	if len(inferred) == 0 {
+		inferred = []string{skill.TargetOpenCode}
+	}
+	return skill.NormalizeTargets(inferred)
+}
+
+func skillTargetError(command string, err error) Envelope {
+	if errors.Is(err, skill.ErrUnsupportedTarget) {
+		return usageError(command, err.Error())
+	}
+	return errorEnvelope(command, "agent_target_infer_failed", "io", err.Error(), "Check the target directory permissions or select targets explicitly with --agent.")
+}
+
+func skillTargetExitCode(err error) int {
+	if errors.Is(err, skill.ErrUnsupportedTarget) {
+		return exitUsage
+	}
+	return exitIO
+}
+
+func skillInstallPlan(dryRun bool, files []skill.ManagedFile) Plan {
+	operations := make([]OpPlan, 0, len(files))
+	for _, file := range files {
+		operations = append(operations, OpPlan{
+			Action:      "write_file",
+			Path:        file.Path,
+			Description: fmt.Sprintf("Install bundled %s file for %s.", file.Kind, file.AssetName),
+		})
 	}
 	return Plan{DryRun: dryRun, ChangesMade: false, Operations: operations}
 }
 
-func skillNoopPlan(target string) Plan {
-	return Plan{
-		DryRun:      false,
-		ChangesMade: false,
-		Operations:  []OpPlan{{Action: "noop", Path: target, Description: "Installed CANON agent skill is current."}},
+func skillUpdatePlan(dryRun bool, states []skillFileState, force bool) Plan {
+	operations := make([]OpPlan, 0, len(states))
+	for _, state := range states {
+		switch {
+		case state.Missing:
+			operations = append(operations, OpPlan{Action: "write_file", Path: state.File.Path, Description: fmt.Sprintf("Install missing bundled %s file for %s.", state.File.Kind, state.File.AssetName)})
+		case state.Inspection.Current:
+			operations = append(operations, OpPlan{Action: "noop", Path: state.File.Path, Description: "Managed bundle file is current."})
+		case force && !state.Inspection.Managed:
+			operations = append(operations, OpPlan{Action: "update_file", Path: state.File.Path, Description: "Overwrite locally modified or unmanaged bundle file."})
+		default:
+			operations = append(operations, OpPlan{Action: "update_file", Path: state.File.Path, Description: "Update unmodified managed bundle file."})
+		}
 	}
+	return Plan{DryRun: dryRun, ChangesMade: false, Operations: operations}
 }
 
-func skillDryRunEnvelope(command string, plan Plan, target, applyCommand string) Envelope {
+func skillDryRunEnvelope(command string, plan Plan, files []skill.ManagedFile, targets []string, applyCommand string) Envelope {
 	return Envelope{
-		Command:  command,
-		Status:   "planned",
-		Data:     map[string]any{"plan": plan, "skill": skillMetadata(target)},
+		Command: command,
+		Status:  "planned",
+		Data: map[string]any{
+			"plan":    plan,
+			"assets":  skillSelectedMetadata(files),
+			"targets": targets,
+		},
 		Warnings: []string{"No changes were made."},
 		NextActions: []NextAction{
 			{Command: applyCommand, Description: "Apply this previewed skill mutation.", Safety: "write"},
@@ -1122,33 +1246,169 @@ func skillDryRunEnvelope(command string, plan Plan, target, applyCommand string)
 	}
 }
 
-func skillMetadata(target string) map[string]any {
-	return map[string]any{
-		"name":     skill.Name,
-		"version":  skill.Version,
-		"hash":     skill.Hash(),
-		"filename": skill.FileName,
-		"path":     target,
+func skillSelectedMetadata(files []skill.ManagedFile) []map[string]any {
+	catalog := make(map[string]skill.CatalogAsset)
+	for _, asset := range skill.Catalog() {
+		catalog[asset.Name] = asset
 	}
+	paths := make(map[string][]string)
+	order := make([]string, 0)
+	for _, file := range files {
+		if _, ok := paths[file.AssetName]; !ok {
+			order = append(order, file.AssetName)
+		}
+		paths[file.AssetName] = append(paths[file.AssetName], file.Path)
+	}
+	sort.Strings(order)
+	assets := make([]map[string]any, 0, len(order))
+	for _, name := range order {
+		asset := catalog[name]
+		sort.Strings(paths[name])
+		assets = append(assets, map[string]any{
+			"name":         asset.Name,
+			"kind":         asset.Kind,
+			"version":      asset.Version,
+			"hash":         asset.Hash,
+			"target_paths": paths[name],
+		})
+	}
+	return assets
 }
 
-func skillInstallApplyCommand(skillDir string) string {
-	command := "canon skill install"
-	if strings.TrimSpace(skillDir) != "" && skillDir != skill.DefaultInstallDir {
-		command += " --skill-dir " + quoteForNextAction(skillDir)
+func writeSkillFiles(stdout io.Writer, opts GlobalOptions, command string, files []skill.ManagedFile) int {
+	states := make([]skillFileState, 0, len(files))
+	for _, file := range files {
+		states = append(states, skillFileState{File: file})
 	}
+	return writeSkillFileStates(stdout, opts, command, states)
+}
+
+func writeSkillFileStates(stdout io.Writer, opts GlobalOptions, command string, states []skillFileState) int {
+	pending := make([]skillFileState, 0, len(states))
+	for _, state := range states {
+		if state.Missing || !state.Inspection.Current {
+			pending = append(pending, state)
+		}
+	}
+	if len(pending) == 0 {
+		return exitOK
+	}
+	if err := preflightSkillDirectories(pending); err != nil {
+		writeEnvelope(stdout, errorEnvelope(command, "skill_directory_create_failed", "io", err.Error(), "Check directory permissions or choose another --skill-dir. No bundle files were written."), opts.Format)
+		return exitIO
+	}
+	if err := preflightSkillWriteAccess(pending); err != nil {
+		writeEnvelope(stdout, errorEnvelope(command, "skill_write_failed", "io", err.Error(), "Check file and directory permissions. No bundle files were written."), opts.Format)
+		return exitIO
+	}
+	for _, state := range pending {
+		if err := os.WriteFile(state.File.Path, []byte(state.File.Content()), 0o644); err != nil {
+			writeEnvelope(stdout, errorEnvelope(command, "skill_write_failed", "io", err.Error(), "Run `canon skill update --dry-run` to inspect and repair a partial bundle; if no files were installed, retry `canon skill install --dry-run`."), opts.Format)
+			return exitIO
+		}
+	}
+	return exitOK
+}
+
+func preflightSkillDirectories(states []skillFileState) error {
+	for _, dir := range skillStateDirectories(states) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
+func preflightSkillWriteAccess(states []skillFileState) error {
+	for _, dir := range skillStateDirectories(states) {
+		probe, err := os.CreateTemp(dir, ".canon-write-check-*")
+		if err != nil {
+			return fmt.Errorf("check write access to %s: %w", dir, err)
+		}
+		probePath := probe.Name()
+		if err := probe.Close(); err != nil {
+			_ = os.Remove(probePath)
+			return fmt.Errorf("close write probe %s: %w", probePath, err)
+		}
+		if err := os.Remove(probePath); err != nil {
+			return fmt.Errorf("remove write probe %s: %w", probePath, err)
+		}
+	}
+	for _, state := range states {
+		info, err := os.Stat(state.File.Path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect %s: %w", state.File.Path, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("%s is a directory", state.File.Path)
+		}
+		file, err := os.OpenFile(state.File.Path, os.O_WRONLY, 0)
+		if err != nil {
+			return fmt.Errorf("check write access to %s: %w", state.File.Path, err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close %s: %w", state.File.Path, err)
+		}
+	}
+	return nil
+}
+
+func skillStateDirectories(states []skillFileState) []string {
+	seen := make(map[string]bool)
+	dirs := make([]string, 0)
+	for _, state := range states {
+		dir := filepath.Dir(state.File.Path)
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	sort.Strings(dirs)
+	return dirs
+}
+
+func commandAssetSelection(flags []string, selected []string) []string {
+	if len(flags) == 0 {
+		return nil
+	}
+	return selected
+}
+
+func skillInstallApplyCommand(skillDir string, only, targets []string) string {
+	command := "canon skill install" + skillSelectionFlags(skillDir, only, targets)
 	return command
 }
 
-func forceAwareApplyCommand(skillDir string, force bool) string {
-	command := "canon skill update"
-	if strings.TrimSpace(skillDir) != "" && skillDir != skill.DefaultInstallDir {
-		command += " --skill-dir " + quoteForNextAction(skillDir)
-	}
+func skillUpdateApplyCommand(skillDir string, only, targets []string, force bool) string {
+	command := "canon skill update" + skillSelectionFlags(skillDir, only, targets)
 	if force {
 		command += " --force"
 	}
 	return command
+}
+
+func skillUpdatePreviewCommand(skillDir string, only, targets []string) string {
+	return skillUpdateApplyCommand(skillDir, only, targets, false) + " --dry-run"
+}
+
+func skillSelectionFlags(skillDir string, only, targets []string) string {
+	var command strings.Builder
+	if strings.TrimSpace(skillDir) != "" && skillDir != skill.DefaultInstallDir {
+		command.WriteString(" --skill-dir ")
+		command.WriteString(quoteForNextAction(skillDir))
+	}
+	for _, name := range only {
+		command.WriteString(" --only ")
+		command.WriteString(quoteForNextAction(name))
+	}
+	for _, target := range targets {
+		command.WriteString(" --agent ")
+		command.WriteString(quoteForNextAction(target))
+	}
+	return command.String()
 }
 
 func newCommandFlagSet(stderr io.Writer, name string) *flag.FlagSet {

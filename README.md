@@ -12,8 +12,8 @@ The initial command surface is intentionally agent-centric:
 - `--dry-run` on every mutating command.
 - Structured errors with codes, categories, and suggested fixes.
 - Stable ADR ids like `ADR-0001` for command composition.
-- `canon skill` plus `canon skill install/update` to publish repository-local
-  agent instructions for operating the CLI.
+- `canon skill` plus `canon skill install/update` to publish a repository-local
+  bundle of agent skills, supporting files, and target-specific subagents.
 
 ## Website
 
@@ -96,5 +96,6 @@ canon --adr-dir architecture/decisions list
 - Output is parseable JSON unless `--format text` is explicitly requested.
 - Failures include machine-readable error codes and suggested fixes.
 - Command outputs include stable ids and next actions for workflow composition.
-- The agent skill can be installed into `.agents/skills/canon/SKILL.md` and later
-  updated through previewable CLI commands.
+- The bundled agent skills can be installed below `.agents/skills` together with
+  target-specific subagent renderings, then updated through previewable CLI
+  commands.

@@ -183,33 +183,71 @@ canon deprecate --id ADR-0003 --reason "The component was removed." --dry-run
 canon deprecate --id ADR-0003 --reason "The component was removed."
 ```
 
-## Installing the agent skill
+## Installing the agent skill bundle
 
-Install the CANON skill into the repository so agents can discover the local ADR
-workflow without copying command output by hand.
+Inspect the bundled catalog before installation:
+
+```sh
+canon skill
+```
+
+Install the bundle into the repository so agents can discover both the local
+canon workflow and the record-kind gate without copying command output by hand:
 
 ```sh
 canon skill install --dry-run
 canon skill install
 ```
 
-The default target is `.agents/skills/canon/SKILL.md`. Use `--skill-dir` when a
-repository uses a different skill location:
+A default installation writes:
+
+- `.agents/skills/canon/SKILL.md`
+- `.agents/skills/canon-record-gate/SKILL.md`
+- `.agents/skills/canon-record-gate/references/boundary-examples.md`
+- a rendered `canon-critic.md` for each selected subagent target
+
+When `--agent` is absent, canon infers targets from existing `.opencode`,
+`.claude`, and `.codex` directories. If none exist, it falls back to OpenCode.
+Select targets explicitly when needed:
 
 ```sh
-canon skill install --skill-dir .agents/skills/canon --dry-run
-canon skill install --skill-dir .agents/skills/canon
+canon skill install --agent claude --dry-run
+canon skill install --agent opencode --agent claude --dry-run
 ```
 
-Update the installed skill after upgrading `canon`:
+Codex is a valid target and receives the shared `.agents/skills` payloads, but
+no `canon-critic` file is rendered because Codex does not yet publish a stable
+subagent discovery convention.
+
+Use `--only` for a partial installation or update:
+
+```sh
+canon skill install --only canon --dry-run
+canon skill update --only canon-record-gate --dry-run
+```
+
+Use `--skill-dir` when a repository uses a different skill bundle root. Asset
+names are appended below the root. Earlier single-skill versions treated a
+custom `--skill-dir` as the `canon` asset directory itself; when migrating such
+a command, pass its parent directory instead. Agent target discovery and output
+paths remain relative to the current working directory:
+
+```sh
+canon skill install --skill-dir .agents/skills --dry-run
+canon skill install --skill-dir .agents/skills
+```
+
+Update every managed bundle file after upgrading `canon`:
 
 ```sh
 canon skill update --dry-run
 canon skill update
 ```
 
-If `skill update` reports `local_skill_modified`, inspect the file first. Only
-use `--force` after deciding that overwriting local edits is acceptable.
+The update plan reports `noop` for current files, `update_file` for unmodified
+older files, and `write_file` for missing bundle files. If `skill update`
+reports `local_skill_modified`, inspect every listed file first. Only use
+`--force` after deciding that overwriting local edits is acceptable.
 
 ## Error recovery
 

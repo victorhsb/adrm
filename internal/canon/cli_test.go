@@ -78,11 +78,21 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 			if command["mutating"] != true || command["has_dry_run"] != true {
 				t.Fatalf("skill install command metadata = %#v", command)
 			}
+			for _, selector := range []string{"--skill-dir", "--only", "--agent"} {
+				if !commandHasSelector(command, selector) {
+					t.Fatalf("skill install missing selector %s: %#v", selector, command)
+				}
+			}
 		}
 		if command["name"] == "skill update" {
 			sawSkillUpdate = true
 			if command["mutating"] != true || command["has_dry_run"] != true {
 				t.Fatalf("skill update command metadata = %#v", command)
+			}
+			for _, selector := range []string{"--skill-dir", "--only", "--agent", "--force"} {
+				if !commandHasSelector(command, selector) {
+					t.Fatalf("skill update missing selector %s: %#v", selector, command)
+				}
 			}
 		}
 	}
@@ -92,6 +102,19 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 	if !sawSkillInstall || !sawSkillUpdate {
 		t.Fatalf("missing skill install/update commands: install=%v update=%v", sawSkillInstall, sawSkillUpdate)
 	}
+}
+
+func commandHasSelector(command map[string]any, want string) bool {
+	selectors, ok := command["selectors"].([]any)
+	if !ok {
+		return false
+	}
+	for _, selector := range selectors {
+		if selector == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNewDryRunDoesNotWriteFile(t *testing.T) {
@@ -338,81 +361,278 @@ func TestSupersedeUpdatesBothADRs(t *testing.T) {
 	}
 }
 
-func TestSkillReturnsManagedContent(t *testing.T) {
+func TestSkillReturnsAssetCatalog(t *testing.T) {
 	code, env := runForTest(t, "skill")
 	if code != exitOK {
 		t.Fatalf("code = %d", code)
 	}
 	data := env["data"].(map[string]any)
-	if data["filename"] != skill.FileName {
-		t.Fatalf("filename = %v", data["filename"])
+	if data["default_skill_dir"] != skill.DefaultInstallDir {
+		t.Fatalf("default_skill_dir = %v", data["default_skill_dir"])
 	}
-	content := data["content"].(string)
-	if !strings.Contains(content, "name: canon") || !strings.Contains(content, "canon-skill-hash: sha256:") {
-		t.Fatalf("content missing skill metadata:\n%s", content)
+	assets := data["assets"].([]any)
+	if len(assets) != 2 {
+		t.Fatalf("asset count = %d", len(assets))
+	}
+	for i, wantName := range []string{"canon", "canon-record-gate"} {
+		asset := assets[i].(map[string]any)
+		if asset["name"] != wantName || asset["kind"] != skill.KindSkill {
+			t.Fatalf("asset %d = %#v", i, asset)
+		}
+		if asset["version"] == "" || !strings.HasPrefix(asset["hash"].(string), "sha256:") {
+			t.Fatalf("asset missing version/hash: %#v", asset)
+		}
+		if len(asset["target_paths"].([]any)) == 0 {
+			t.Fatalf("asset missing target paths: %#v", asset)
+		}
+	}
+	if _, ok := data["content"]; ok {
+		t.Fatal("catalog unexpectedly includes embedded content")
 	}
 }
 
-func TestSkillInstallDryRunAndInstall(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "skill")
-	target := skill.TargetPath(dir)
+func TestSkillInstallDryRunFallbackAndInstall(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
 
-	code, env := runForTest(t, "skill", "install", "--skill-dir", dir, "--dry-run")
+	code, env := runForTest(t, "skill", "install", "--dry-run")
 	if code != exitOK || env["status"] != "planned" {
 		t.Fatalf("dry-run code=%d env=%#v", code, env)
 	}
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Fatalf("dry-run wrote target or unexpected stat error: %v", err)
+	plan := envelopePlan(env)
+	operations := plan["operations"].([]any)
+	if len(operations) != 4 {
+		t.Fatalf("operation count = %d, want 4: %#v", len(operations), operations)
 	}
-	warnings := env["warnings"].([]any)
-	if warnings[0] != "No changes were made." {
-		t.Fatalf("warnings = %#v", warnings)
+	assertPlanPaths(t, operations, []string{
+		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
+		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
+		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
+		filepath.Join(".opencode", "agents", "canon-critic.md"),
+	})
+	if plan["dry_run"] != true {
+		t.Fatalf("dry_run = %v", plan["dry_run"])
+	}
+	assertNoChangesWarning(t, env)
+	if _, err := os.Stat(".agents"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created .agents: %v", err)
+	}
+	if _, err := os.Stat(".opencode"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created .opencode: %v", err)
 	}
 
-	code, env = runForTest(t, "skill", "install", "--skill-dir", dir)
+	code, env = runForTest(t, "skill", "install")
 	if code != exitOK {
 		t.Fatalf("install code=%d env=%#v", code, env)
 	}
-	content, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatalf("read installed skill: %v", err)
-	}
-	if string(content) != skill.Content() {
-		t.Fatalf("installed content differs from bundled content")
-	}
+	assertInstalledFiles(t, "", []string{skill.TargetOpenCode})
 
-	code, env = runForTest(t, "skill", "install", "--skill-dir", dir)
+	code, env = runForTest(t, "skill", "install")
 	if code != exitState {
 		t.Fatalf("repeat install code=%d env=%#v", code, env)
 	}
-	errData := env["error"].(map[string]any)
-	if errData["code"] != "skill_already_installed" {
-		t.Fatalf("error = %#v", errData)
+	if env["error"].(map[string]any)["code"] != "skill_already_installed" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+}
+
+func TestSkillInstallOnlyCanon(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+
+	code, env := runForTest(t, "skill", "install", "--only", "canon")
+	if code != exitOK {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+	operations := envelopePlan(env)["operations"].([]any)
+	assertPlanPaths(t, operations, []string{filepath.Join(".agents", "skills", "canon", "SKILL.md")})
+	if _, err := os.Stat(filepath.Join(".agents", "skills", "canon", "SKILL.md")); err != nil {
+		t.Fatalf("canon skill not installed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(".agents", "skills", "canon-record-gate")); !os.IsNotExist(err) {
+		t.Fatalf("record gate unexpectedly installed: %v", err)
+	}
+	if _, err := os.Stat(".opencode"); !os.IsNotExist(err) {
+		t.Fatalf("agent unexpectedly installed: %v", err)
+	}
+}
+
+func TestSkillInstallClaudeTarget(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+
+	code, env := runForTest(t, "skill", "install", "--agent", "claude")
+	if code != exitOK {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+	agentPath := filepath.Join(".claude", "agents", "canon-critic.md")
+	content, err := os.ReadFile(agentPath)
+	if err != nil {
+		t.Fatalf("read claude agent: %v", err)
+	}
+	for _, want := range []string{"tools: Read, Grep, Glob, Bash", "model: inherit", "canon-skill-version: 1"} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("claude agent missing %q:\n%s", want, content)
+		}
+	}
+	if _, err := os.Stat(".opencode"); !os.IsNotExist(err) {
+		t.Fatalf("opencode target unexpectedly created: %v", err)
+	}
+	targets := env["data"].(map[string]any)["targets"].([]any)
+	if len(targets) != 1 || targets[0] != skill.TargetClaude {
+		t.Fatalf("targets = %#v", targets)
+	}
+}
+
+func TestSkillInstallInfersTargets(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	if err := os.Mkdir(".claude", 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+
+	code, env := runForTest(t, "skill", "install", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("dry-run code=%d env=%#v", code, env)
+	}
+	operations := envelopePlan(env)["operations"].([]any)
+	assertPlanPaths(t, operations, []string{
+		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
+		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
+		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
+		filepath.Join(".claude", "agents", "canon-critic.md"),
+	})
+}
+
+func TestSkillInstallRepeatedTargetsAndCodex(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+
+	code, env := runForTest(t, "skill", "install", "--agent", "claude", "--agent", "opencode", "--agent", "claude", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("dry-run code=%d env=%#v", code, env)
+	}
+	operations := envelopePlan(env)["operations"].([]any)
+	if len(operations) != 5 {
+		t.Fatalf("operation count = %d, want 5", len(operations))
+	}
+	targets := env["data"].(map[string]any)["assets"].([]any)[1].(map[string]any)["target_paths"].([]any)
+	if len(targets) != 4 {
+		t.Fatalf("selected record-gate target paths = %#v", targets)
+	}
+
+	project = t.TempDir()
+	t.Chdir(project)
+	code, env = runForTest(t, "skill", "install", "--agent", "codex", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("codex dry-run code=%d env=%#v", code, env)
+	}
+	operations = envelopePlan(env)["operations"].([]any)
+	assertPlanPaths(t, operations, []string{
+		filepath.Join(".agents", "skills", "canon-record-gate", "SKILL.md"),
+		filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md"),
+		filepath.Join(".agents", "skills", "canon", "SKILL.md"),
+	})
+}
+
+func TestSkillRejectsInvalidAssetAndTarget(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+
+	code, env := runForTest(t, "skill", "install", "--only", "canon-critic", "--dry-run")
+	if code != exitUsage || env["error"].(map[string]any)["category"] != "usage" {
+		t.Fatalf("invalid asset code=%d env=%#v", code, env)
+	}
+	code, env = runForTest(t, "skill", "install", "--agent", "other", "--dry-run")
+	if code != exitUsage || env["error"].(map[string]any)["category"] != "usage" {
+		t.Fatalf("invalid target code=%d env=%#v", code, env)
+	}
+}
+
+func TestSkillInstallCollisionPreflightWritesNothing(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	conflict := filepath.Join(".agents", "skills", "canon-record-gate", "references", "boundary-examples.md")
+	if err := os.MkdirAll(filepath.Dir(conflict), 0o755); err != nil {
+		t.Fatalf("mkdir conflict: %v", err)
+	}
+	if err := os.WriteFile(conflict, []byte("local"), 0o644); err != nil {
+		t.Fatalf("write conflict: %v", err)
+	}
+
+	code, env := runForTest(t, "skill", "install")
+	if code != exitState {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "skill_already_installed" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+	if _, err := os.Stat(filepath.Join(".agents", "skills", "canon", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("preflight still wrote canon skill: %v", err)
+	}
+	if _, err := os.Stat(".opencode"); !os.IsNotExist(err) {
+		t.Fatalf("preflight still wrote agent: %v", err)
+	}
+}
+
+func TestSkillInstallPreflightsDirectoryCreation(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission-based preflight test is not meaningful as root")
+	}
+	project := t.TempDir()
+	t.Chdir(project)
+	if err := os.Mkdir(".claude", 0o500); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+
+	code, env := runForTest(t, "skill", "install", "--agent", "claude")
+	if code != exitIO {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "skill_directory_create_failed" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+	if _, err := os.Stat(filepath.Join(".agents", "skills", "canon", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("preflight still wrote skill files: %v", err)
 	}
 }
 
 func TestSkillUpdateCurrentNoops(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "skill")
-	if code, env := runForTest(t, "skill", "install", "--skill-dir", dir); code != exitOK {
+	project := t.TempDir()
+	t.Chdir(project)
+	if code, env := runForTest(t, "skill", "install"); code != exitOK {
 		t.Fatalf("install code=%d env=%#v", code, env)
 	}
-	code, env := runForTest(t, "skill", "update", "--skill-dir", dir, "--dry-run")
-	if code != exitOK {
+
+	code, env := runForTest(t, "skill", "update", "--dry-run")
+	if code != exitOK || env["status"] != "planned" {
+		t.Fatalf("update dry-run code=%d env=%#v", code, env)
+	}
+	plan := envelopePlan(env)
+	if plan["dry_run"] != true {
+		t.Fatalf("dry_run = %v", plan["dry_run"])
+	}
+	assertNoChangesWarning(t, env)
+	for _, raw := range plan["operations"].([]any) {
+		if raw.(map[string]any)["action"] != "noop" {
+			t.Fatalf("operation is not noop: %#v", raw)
+		}
+	}
+
+	code, env = runForTest(t, "skill", "update")
+	if code != exitOK || env["status"] != "ok" {
 		t.Fatalf("update code=%d env=%#v", code, env)
 	}
-	if env["status"] != "ok" {
-		t.Fatalf("status = %v", env["status"])
-	}
-	plan := env["data"].(map[string]any)["plan"].(map[string]any)
-	operations := plan["operations"].([]any)
-	if operations[0].(map[string]any)["action"] != "noop" {
-		t.Fatalf("operations = %#v", operations)
+	plan = envelopePlan(env)
+	if plan["dry_run"] != false || plan["changes_made"] != false {
+		t.Fatalf("plan = %#v", plan)
 	}
 }
 
 func TestSkillUpdateManagedOlderVersion(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "skill")
-	target := skill.TargetPath(dir)
+	project := t.TempDir()
+	t.Chdir(project)
+	target := filepath.Join(".agents", "skills", "canon", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -420,49 +640,183 @@ func TestSkillUpdateManagedOlderVersion(t *testing.T) {
 		t.Fatalf("write old skill: %v", err)
 	}
 
-	code, env := runForTest(t, "skill", "update", "--skill-dir", dir, "--dry-run")
+	code, env := runForTest(t, "skill", "update", "--only", "canon", "--dry-run")
 	if code != exitOK || env["status"] != "planned" {
 		t.Fatalf("dry-run code=%d env=%#v", code, env)
 	}
-	if content, _ := os.ReadFile(target); strings.Contains(string(content), "Create an ADR:") {
-		t.Fatalf("dry-run updated target")
+	operation := envelopePlan(env)["operations"].([]any)[0].(map[string]any)
+	if operation["action"] != "update_file" {
+		t.Fatalf("operation = %#v", operation)
+	}
+	if content, _ := os.ReadFile(target); !strings.Contains(string(content), "older instructions") {
+		t.Fatal("dry-run updated target")
 	}
 
-	code, env = runForTest(t, "skill", "update", "--skill-dir", dir)
+	code, env = runForTest(t, "skill", "update", "--only", "canon")
 	if code != exitOK {
 		t.Fatalf("update code=%d env=%#v", code, env)
 	}
+	desired := desiredSkillFilesForTest(t, []string{"canon"}, "")[0]
 	content, err := os.ReadFile(target)
 	if err != nil {
 		t.Fatalf("read updated skill: %v", err)
 	}
-	if string(content) != skill.Content() {
-		t.Fatalf("updated content differs from bundled content")
+	if string(content) != desired.Content() {
+		t.Fatal("updated content differs from bundled content")
 	}
 }
 
+func TestSkillUpdatePreflightsReadOnlyManagedFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission-based preflight test is not meaningful as root")
+	}
+	project := t.TempDir()
+	t.Chdir(project)
+	target := filepath.Join(".agents", "skills", "canon", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	oldContent := testManagedSkillContent("older instructions")
+	if err := os.WriteFile(target, []byte(oldContent), 0o444); err != nil {
+		t.Fatalf("write old skill: %v", err)
+	}
+
+	code, env := runForTest(t, "skill", "update", "--only", "canon")
+	if code != exitIO {
+		t.Fatalf("update code=%d env=%#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "skill_write_failed" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read old skill: %v", err)
+	}
+	if string(content) != oldContent {
+		t.Fatal("preflight failure still modified the target")
+	}
+}
+
+func TestSkillUpdateAddsMissingBundleFiles(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	if code, env := runForTest(t, "skill", "install", "--only", "canon"); code != exitOK {
+		t.Fatalf("install canon code=%d env=%#v", code, env)
+	}
+
+	code, env := runForTest(t, "skill", "update", "--dry-run")
+	if code != exitOK || env["status"] != "planned" {
+		t.Fatalf("update dry-run code=%d env=%#v", code, env)
+	}
+	operations := envelopePlan(env)["operations"].([]any)
+	if len(operations) != 4 {
+		t.Fatalf("operation count = %d, want 4", len(operations))
+	}
+	for _, raw := range operations[:2] {
+		if raw.(map[string]any)["action"] != "write_file" {
+			t.Fatalf("missing record-gate operation = %#v", raw)
+		}
+	}
+	if operations[2].(map[string]any)["action"] != "noop" {
+		t.Fatalf("existing canon operation = %#v", operations[2])
+	}
+	if operations[3].(map[string]any)["action"] != "write_file" {
+		t.Fatalf("missing agent operation = %#v", operations[3])
+	}
+
+	code, env = runForTest(t, "skill", "update")
+	if code != exitOK {
+		t.Fatalf("update code=%d env=%#v", code, env)
+	}
+	assertInstalledFiles(t, "", []string{skill.TargetOpenCode})
+}
+
 func TestSkillUpdateRefusesLocalModificationWithoutForce(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "skill")
-	target := skill.TargetPath(dir)
-	if code, env := runForTest(t, "skill", "install", "--skill-dir", dir); code != exitOK {
+	project := t.TempDir()
+	t.Chdir(project)
+	target := filepath.Join(".agents", "skills", "canon", "SKILL.md")
+	if code, env := runForTest(t, "skill", "install", "--only", "canon"); code != exitOK {
 		t.Fatalf("install code=%d env=%#v", code, env)
 	}
-	if err := os.WriteFile(target, []byte(skill.Content()+"\nlocal edit\n"), 0o644); err != nil {
+	original, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read installed skill: %v", err)
+	}
+	if err := os.WriteFile(target, append(original, []byte("local edit\n")...), 0o644); err != nil {
 		t.Fatalf("write local edit: %v", err)
 	}
 
-	code, env := runForTest(t, "skill", "update", "--skill-dir", dir, "--dry-run")
+	code, env := runForTest(t, "skill", "update", "--only", "canon", "--dry-run")
 	if code != exitState {
 		t.Fatalf("update code=%d env=%#v", code, env)
 	}
-	errData := env["error"].(map[string]any)
-	if errData["code"] != "local_skill_modified" {
-		t.Fatalf("error = %#v", errData)
+	if env["error"].(map[string]any)["code"] != "local_skill_modified" {
+		t.Fatalf("error = %#v", env["error"])
 	}
 
-	code, env = runForTest(t, "skill", "update", "--skill-dir", dir, "--force", "--dry-run")
+	code, env = runForTest(t, "skill", "update", "--only", "canon", "--force", "--dry-run")
 	if code != exitOK || env["status"] != "planned" {
 		t.Fatalf("force dry-run code=%d env=%#v", code, env)
+	}
+	assertNoChangesWarning(t, env)
+
+	code, env = runForTest(t, "skill", "update", "--only", "canon", "--force")
+	if code != exitOK {
+		t.Fatalf("force update code=%d env=%#v", code, env)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read forced skill: %v", err)
+	}
+	if strings.Contains(string(content), "local edit") {
+		t.Fatal("force update retained local edit")
+	}
+}
+
+func TestSkillUpdateRequiresAnInstalledSelection(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	code, env := runForTest(t, "skill", "update")
+	if code != exitNotFound {
+		t.Fatalf("update code=%d env=%#v", code, env)
+	}
+	if env["error"].(map[string]any)["code"] != "skill_not_installed" {
+		t.Fatalf("error = %#v", env["error"])
+	}
+}
+
+func TestSkillInstallCustomSkillRoot(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	code, env := runForTest(t, "skill", "install", "--skill-dir", filepath.Join("custom", "skills"), "--only", "canon")
+	if code != exitOK {
+		t.Fatalf("install code=%d env=%#v", code, env)
+	}
+	if _, err := os.Stat(filepath.Join("custom", "skills", "canon", "SKILL.md")); err != nil {
+		t.Fatalf("custom skill not installed: %v", err)
+	}
+}
+
+func TestSkillTextOutputRendersCatalogAndPlans(t *testing.T) {
+	project := t.TempDir()
+	t.Chdir(project)
+	code, output := runRawForTest(t, "-t", "skill")
+	if code != exitOK {
+		t.Fatalf("skill code=%d output:\n%s", code, output)
+	}
+	for _, want := range []string{"assets:", "canon [skill]", "canon-record-gate [skill]", "target paths:"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("skill text missing %q:\n%s", want, output)
+		}
+	}
+	code, output = runRawForTest(t, "-t", "skill", "install", "--dry-run")
+	if code != exitOK {
+		t.Fatalf("install code=%d output:\n%s", code, output)
+	}
+	for _, want := range []string{"plan:", "write_file:", "dry_run: true", "No changes were made."} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("install text missing %q:\n%s", want, output)
+		}
 	}
 }
 
@@ -592,6 +946,53 @@ func TestContextFormatRejectsUnsupportedCommands(t *testing.T) {
 	want := "## Canon Error\n\n- `unsupported_context_format`: context format is not supported by show\n"
 	if output != want {
 		t.Fatalf("context error mismatch\nwant:\n%s\ngot:\n%s", want, output)
+	}
+}
+
+func envelopePlan(env map[string]any) map[string]any {
+	return env["data"].(map[string]any)["plan"].(map[string]any)
+}
+
+func assertNoChangesWarning(t *testing.T, env map[string]any) {
+	t.Helper()
+	warnings, ok := env["warnings"].([]any)
+	if !ok || len(warnings) != 1 || warnings[0] != "No changes were made." {
+		t.Fatalf("warnings = %#v", env["warnings"])
+	}
+}
+
+func assertPlanPaths(t *testing.T, operations []any, want []string) {
+	t.Helper()
+	if len(operations) != len(want) {
+		t.Fatalf("operation count = %d, want %d: %#v", len(operations), len(want), operations)
+	}
+	for i, raw := range operations {
+		operation := raw.(map[string]any)
+		if operation["path"] != want[i] {
+			t.Fatalf("operation %d path = %v, want %s (all operations: %#v)", i, operation["path"], want[i], operations)
+		}
+	}
+}
+
+func desiredSkillFilesForTest(t *testing.T, assets []string, skillsRoot string, targets ...string) []skill.ManagedFile {
+	t.Helper()
+	files, err := skill.ManagedFiles(assets, skillsRoot, targets)
+	if err != nil {
+		t.Fatalf("managed files: %v", err)
+	}
+	return files
+}
+
+func assertInstalledFiles(t *testing.T, skillsRoot string, targets []string) {
+	t.Helper()
+	for _, file := range desiredSkillFilesForTest(t, nil, skillsRoot, targets...) {
+		content, err := os.ReadFile(file.Path)
+		if err != nil {
+			t.Fatalf("read installed file %s: %v", file.Path, err)
+		}
+		if string(content) != file.Content() {
+			t.Fatalf("installed file %s differs from bundle", file.Path)
+		}
 	}
 }
 

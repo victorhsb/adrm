@@ -1,6 +1,3 @@
-<!-- canon-skill-version: 1 -->
-<!-- canon-skill-hash: sha256:b68d8749af3eef04f1018e395a1304bca3ee6e16ea7aa20e0abc9463854ca930 -->
-
 # Boundary Examples
 
 These examples illustrate the gates; their subjects are not automatic trigger

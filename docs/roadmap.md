@@ -25,7 +25,6 @@ next steps should preserve agent-friendly behavior as the command surface grows.
 ## Documentation
 
 - Add examples using real ADR corpora.
-- Add integration notes for popular coding agents.
 - Add a contributor guide once the internal package layout stabilizes.
 
 ## Packaging

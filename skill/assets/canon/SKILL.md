@@ -2,8 +2,6 @@
 name: canon
 description: Manage Architecture Decision Records (ADRs), SPECs, and domain entries with the canon CLI. Use whenever creating, recording, or revisiting an architectural decision; defining or updating a canonical domain concept; transitioning an ADR, SPEC, or domain entry through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history or the domain model; or initializing document storage - even if the user does not mention canon by name.
 ---
-<!-- canon-skill-version: 10 -->
-<!-- canon-skill-hash: sha256:42873dc2d50d4a1d4de86a2d7339393a1f3e3b45f990c40cdc09869c64b189d0 -->
 
 # CANON Agent Skill
 

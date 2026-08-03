@@ -424,77 +424,141 @@ Safety: mutating. Supports `--dry-run`.
 
 ## `skill`
 
-Prints the bundled agent skill for operating `canon`.
+Returns the bundled skill asset catalog.
 
 ```sh
 canon skill
 ```
 
-The returned `data.content` is the generated `SKILL.md` content. The response
-also includes `data.skill.name`, `data.skill.version`, `data.skill.hash`, and
-`data.skill.default_install_dir`.
+`data.assets` contains the public bundle assets in deterministic order. Each
+entry includes:
+
+- `name`
+- `kind` (`skill`)
+- `version`
+- `hash` (a deterministic aggregate content hash)
+- `target_paths`
+
+The catalog contains `canon` and `canon-record-gate`. The `canon-critic`
+subagent is a component of `canon-record-gate`, not a separate catalog asset.
+`data.default_skill_dir` is `.agents/skills`.
 
 Safety: read-only.
 
 ## `skill install`
 
-Installs the CANON agent skill into a repository-local skill directory.
+Installs the bundled skills, supporting payload files, and selected subagent
+components into a repository.
 
 ```sh
 canon skill install --dry-run
 canon skill install
-canon skill install --skill-dir .agents/skills/canon --dry-run
+canon skill install --only canon --dry-run
+canon skill install --agent claude --dry-run
+canon skill install --skill-dir .agents/skills --agent opencode --agent claude --dry-run
 ```
 
 Flags:
 
-- `--skill-dir`: installation directory. Default: `.agents/skills/canon`.
+- `--skill-dir`: skill bundle root. Default: `.agents/skills`. Asset names are
+  appended below this root, so the default canon path is
+  `.agents/skills/canon/SKILL.md`.
+- `--only <name>`: restrict installation to a bundled skill asset. Repeatable;
+  valid names are `canon` and `canon-record-gate`.
+- `--agent <target>`: select an agent target. Repeatable; valid targets are
+  `opencode`, `claude`, and `codex`.
 - `--dry-run`: preview without writing.
+
+`--skill-dir` is a bundle root, not one asset's directory. Earlier single-skill
+versions treated a custom value as the `canon` skill directory itself; when
+migrating such a command, pass its parent directory instead. Skill payloads
+honor `--skill-dir`, while agent target inference and `.opencode`/`.claude`
+output paths are resolved from the current working directory.
 
 Effects:
 
-- Creates the skill directory if missing.
-- Writes `SKILL.md` with managed version and content-hash metadata.
+- Writes one `SKILL.md` per selected skill below the skill root.
+- Writes supporting payload files such as
+  `.agents/skills/canon-record-gate/references/boundary-examples.md`.
+- When `canon-record-gate` is selected, renders `canon-critic.md` for each
+  selected target that supports subagent discovery:
+  - OpenCode: `.opencode/agents/canon-critic.md`
+  - Claude: `.claude/agents/canon-critic.md`
+  - Codex: valid, but currently produces no agent file because Codex has no
+    stable subagent discovery contract.
+- Adds managed version and content-hash markers to every generated Markdown
+  file.
 
-The default target path is `.agents/skills/canon/SKILL.md`.
+When `--agent` is absent, targets are inferred from existing `.opencode`,
+`.claude`, and `.codex` directories in the current project. If none exist,
+installation falls back to OpenCode. Install checks every selected target file
+before writing; if any file already exists, it writes nothing and reports
+`skill_already_installed` with a suggestion to use `skill update`.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. Dry-run output contains the complete
+per-file plan and the standard `No changes were made.` warning.
 
 Errors:
 
-- `skill_already_installed`: target `SKILL.md` already exists. Use
-  `canon skill update --dry-run`.
-- `skill_directory_create_failed`: the skill directory could not be created.
-- `skill_write_failed`: `SKILL.md` could not be written.
+- `invalid_usage`: an unknown `--only` asset, unsupported `--agent` target, or
+  unexpected positional argument was supplied.
+- `skill_already_installed`: one or more selected target files already exist.
+- `skill_stat_failed`: a target file could not be inspected.
+- `agent_target_infer_failed`: target discovery directories could not be
+  inspected.
+- `skill_directory_create_failed`: a target directory could not be created.
+- `skill_write_failed`: a target file could not be written.
 
 ## `skill update`
 
-Updates an installed CANON agent skill.
+Refreshes every installed file managed by the selected bundle.
 
 ```sh
 canon skill update --dry-run
 canon skill update
+canon skill update --only canon-record-gate --dry-run
 canon skill update --force --dry-run
 ```
 
 Flags:
 
-- `--skill-dir`: installation directory. Default: `.agents/skills/canon`.
-- `--force`: overwrite a locally modified or unmanaged `SKILL.md`.
+- `--skill-dir`: skill bundle root. Default: `.agents/skills`.
+- `--only <name>`: restrict the update to a bundled skill asset. Repeatable.
+- `--agent <target>`: select an agent target. Repeatable; valid targets are
+  `opencode`, `claude`, and `codex`.
+- `--force`: overwrite locally modified or unmanaged target files.
 - `--dry-run`: preview without writing.
+
+As with `skill install`, `--skill-dir` selects the skill bundle root, while
+agent target inference and output paths are resolved from the current working
+directory.
 
 Behavior:
 
-- Returns a no-op plan when the installed skill is already current.
-- Updates unmodified CANON-managed skill files.
-- Refuses to overwrite local edits unless `--force` is passed.
+- Emits `noop` operations for current files.
+- Updates older files whose managed hash markers prove they were not locally
+  modified.
+- Writes missing bundle files when at least one selected file is already
+  installed, allowing an older single-skill installation to acquire the rest of
+  the bundle.
+- Refuses the whole update when any selected file is locally modified or lacks
+  valid managed markers, unless `--force` is passed.
+- Returns `skill_not_installed` when none of the selected files exists.
+- Infers targets the same way as `skill install` when `--agent` is absent.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. Every dry-run, including an all-noop
+plan, has `plan.dry_run: true` and the standard `No changes were made.` warning.
 
 Errors:
 
-- `skill_not_installed`: target `SKILL.md` does not exist. Use
+- `invalid_usage`: an unknown `--only` asset, unsupported `--agent` target, or
+  unexpected positional argument was supplied.
+- `skill_not_installed`: no selected managed bundle file exists. Use
   `canon skill install --dry-run`.
-- `local_skill_modified`: target file is not an unmodified CANON-managed skill.
-- `skill_read_failed`: target file could not be read.
-- `skill_write_failed`: target file could not be written.
+- `local_skill_modified`: one or more selected files are locally modified or
+  unmanaged. Review them before retrying with `--force`.
+- `skill_read_failed`: a target file could not be read.
+- `agent_target_infer_failed`: target discovery directories could not be
+  inspected.
+- `skill_directory_create_failed`: a target directory could not be created.
+- `skill_write_failed`: a target file could not be written.
