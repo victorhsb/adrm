@@ -31,8 +31,10 @@
   applies updates with per-asset versions and per-file hashes, refusing
   locally modified or unmanaged files unless `--force` is given. Added Codex
   custom-agent rendering alongside OpenCode and Claude targets.
-- Added CI workflows for tests, lint, and corpus QA (`validate`/`doctor` on
-  `docs/**` changes), and a project website with Canon branding.
+- Added CI workflows for tests, lint, and corpus QA (`validate` on
+  `docs/**` changes; `doctor` is the validation engine's shallow mode, so a
+  passing `validate` implies a passing `doctor`), and a project website with
+  Canon branding.
 - Declared support for macOS and Linux only; Windows is not supported
   (ADR-0014).
 

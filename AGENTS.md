@@ -188,8 +188,9 @@ CI mirrors these checks: `.github/workflows/ci.yml` runs `gofmt`, `go vet`,
 golangci-lint (`.golangci.yml`), `go test ./... -race` on Linux/macOS (the
 supported platforms, per ADR-0014),
 CLI smoke checks, and `scripts/install.sh --dry-run`;
-`.github/workflows/corpus.yml` runs `validate` and `doctor` when `docs/**`
-changes. Keep CI green with the same commands run locally.
+`.github/workflows/corpus.yml` runs `validate` when `docs/**` changes
+(`doctor` is redundant there: it is the validation engine's shallow mode, so
+a passing `validate` implies a passing `doctor`). Keep CI green with the same commands run locally.
 
 ## Documentation
 
