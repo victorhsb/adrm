@@ -6,6 +6,12 @@
 
 <p align="center"><strong>Persistent records for agent-led software.</strong></p>
 
+<div align="center">
+  <a href="https://github.com/victorhsb/canon/actions/workflows/ci.yml">
+    <img src="https://github.com/victorhsb/canon/actions/workflows/ci.yml/badge.svg"/>
+  </a>
+</div>
+
 `canon` is a CLI for managing the canonical records of a codebase —
 Architecture Decision Records (ADRs), software specifications (SPECs), and the
 Domain Model (one canonical concept per domain entry) — in agent-led
