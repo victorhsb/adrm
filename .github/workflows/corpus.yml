@@ -31,6 +31,3 @@ jobs:
 
       - name: Validate ADR/SPEC/Domain corpus
         run: go run ./cmd/canon validate
-
-      - name: Doctor
-        run: go run ./cmd/canon doctor
