@@ -184,6 +184,12 @@ go build ./cmd/canon
 rm canon
 ```
 
+CI mirrors these checks: `.github/workflows/ci.yml` runs `gofmt`, `go vet`,
+golangci-lint (`.golangci.yml`), `go test ./... -race` on Linux/macOS/Windows,
+CLI smoke checks, and `scripts/install.sh --dry-run`;
+`.github/workflows/corpus.yml` runs `validate` and `doctor` when `docs/**`
+changes. Keep CI green with the same commands run locally.
+
 ## Documentation
 
 Keep docs close to behavior. If a command flag, output shape, document field,

@@ -1,0 +1,36 @@
+name: Corpus QA
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - ".github/workflows/corpus.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate corpus
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Validate ADR/SPEC/Domain corpus
+        run: go run ./cmd/canon validate
+
+      - name: Doctor
+        run: go run ./cmd/canon doctor
