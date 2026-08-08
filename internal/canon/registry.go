@@ -22,6 +22,14 @@ func commandRegistry() []CommandInfo {
 			HasDryRun: false,
 		},
 		{
+			Name:      "version",
+			Purpose:   "Print the canon build version.",
+			Safety:    "read-only",
+			Examples:  []string{"canon version"},
+			Mutating:  false,
+			HasDryRun: false,
+		},
+		{
 			Name:      "doctor",
 			Purpose:   "Check whether ADR, SPEC, and domain storage is present and parseable, and flag domain-model integrity problems (duplicate accepted titles, references to superseded or deprecated entries).",
 			Safety:    "read-only",

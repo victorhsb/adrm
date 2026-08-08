@@ -98,6 +98,8 @@ func renderDataText(out io.Writer, command string, data any) {
 	switch command {
 	case "commands":
 		renderCommandsText(out, payload)
+	case "version":
+		renderVersionText(out, payload)
 	case "doctor":
 		renderDoctorText(out, payload)
 	case "validate", "adr validate", "spec validate", "domain validate":
@@ -155,6 +157,16 @@ func renderCommandsText(out io.Writer, payload map[string]any) {
 			fmt.Fprintf(out, "  %s (default: %s)\n    %s\n", flag["name"], flag["default"], flag["purpose"])
 		}
 	}
+}
+
+func renderVersionText(out io.Writer, payload map[string]any) {
+	var data struct {
+		Version string `json:"version"`
+	}
+	if !jsonCopy(payload, &data) {
+		return
+	}
+	fmt.Fprintf(out, "version: %s\n", data.Version)
 }
 
 func renderDoctorText(out io.Writer, payload map[string]any) {

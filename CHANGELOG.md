@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added `canon version`, printing the build version (`dev` for source builds;
+  release builds inject it via `-ldflags "-X .../internal/canon.Version=vX.Y.Z"`).
+
 ## v0.2.0 - 2026-08-04
 
 - Renamed the project from `adrm` to `canon` (ADR-0007).

@@ -136,6 +136,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	switch command {
 	case "commands":
 		return runCommands(stdout, opts)
+	case "version":
+		return runVersion(stdout, opts)
 	case "doctor":
 		return runDoctor(stdout, opts, repo)
 	case "validate":
@@ -207,6 +209,17 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 			},
 		},
 		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR, SPEC, and domain directories are ready.", Safety: "read-only"}},
+	}, opts.Format)
+	return exitOK
+}
+
+func runVersion(stdout io.Writer, opts GlobalOptions) int {
+	writeEnvelope(stdout, Envelope{
+		Command: "version",
+		Data: map[string]any{
+			"version": Version,
+		},
+		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }

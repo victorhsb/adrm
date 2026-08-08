@@ -63,6 +63,18 @@ dry-run support, and suggested next commands.
 
 Safety: read-only.
 
+## `version`
+
+Prints the canon build version. Builds from source report `dev`; release builds
+inject the version at build time with
+`-ldflags "-X github.com/victorhsb/canon/internal/canon.Version=vX.Y.Z"`.
+
+```sh
+canon version
+```
+
+Safety: read-only.
+
 ## `doctor`
 
 Checks whether ADR, SPEC, and domain storage exists and whether files can be

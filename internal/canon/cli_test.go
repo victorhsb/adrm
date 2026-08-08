@@ -104,6 +104,30 @@ func TestCommandsExposeAgentMetadata(t *testing.T) {
 	}
 }
 
+func TestVersionCommand(t *testing.T) {
+	code, env := runForTest(t, "version")
+	if code != exitOK {
+		t.Fatalf("code = %d", code)
+	}
+	if env["schema_version"] != SchemaVersion {
+		t.Fatalf("schema_version = %v", env["schema_version"])
+	}
+	data := env["data"].(map[string]any)
+	if data["version"] != Version {
+		t.Fatalf("version = %v, want %q", data["version"], Version)
+	}
+	code, text := runRawForTest(t, "--format", "text", "version")
+	if code != exitOK {
+		t.Fatalf("text code = %d", code)
+	}
+	if !strings.Contains(text, "version: "+Version) {
+		t.Fatalf("text output missing version: %q", text)
+	}
+	if strings.Contains(text, "schema_version") {
+		t.Fatalf("text output contaminated with schema_version: %q", text)
+	}
+}
+
 func commandHasSelector(command map[string]any, want string) bool {
 	selectors, ok := command["selectors"].([]any)
 	if !ok {
