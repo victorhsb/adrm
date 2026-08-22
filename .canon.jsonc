@@ -1,0 +1,8 @@
+{
+	// This corpus does not use `canon append`. Edit document files directly;
+	// git history is the record of change. See ADR-0015.
+	"schema_version": "canon.v1",
+	"conventions": {
+		"append": false
+	}
+}

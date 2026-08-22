@@ -12,7 +12,7 @@ import (
 // This file implements the shared validation engine (ADR-0009). The engine
 // has two modes: shallow, used by doctor, covers directory existence and
 // parseability; full, used by the validate command family, runs the complete
-// SPEC-0001 check catalog. Findings are Diagnostics whose Status field
+// corpus check catalog. Findings are Diagnostics whose Status field
 // carries the severity: "error" or "warning".
 
 // validationSummary aggregates finding counts for the validate envelope.
@@ -23,7 +23,7 @@ type validationSummary struct {
 }
 
 // validationResult is the engine's full-mode output: findings only (no
-// per-file ok entries) plus a summary, per SPEC-0001.
+// per-file ok entries) plus a summary.
 type validationResult struct {
 	Findings []Diagnostic
 	Summary  validationSummary
@@ -123,7 +123,7 @@ func scanStores(repo Repo, kind string) ([]scannedDoc, []Diagnostic, int) {
 	return docs, findings, filesChecked
 }
 
-// validateCorpus runs the full SPEC-0001 check catalog over the stores in
+// validateCorpus runs the full corpus check catalog over the stores in
 // scope.
 func validateCorpus(repo Repo, kind string) validationResult {
 	docs, findings, filesChecked := scanStores(repo, kind)
@@ -142,9 +142,9 @@ func validateCorpus(repo Repo, kind string) validationResult {
 }
 
 // validateSingle runs the per-document checks for one document, resolving its
-// references against the whole corpus. Per SPEC-0001, only findings about the
-// target document are reported. The boolean result is false when no parseable
-// file claims the id.
+// references against the whole corpus. Only findings about the target
+// document are reported. The boolean result is false when no parseable file
+// claims the id.
 func validateSingle(repo Repo, id string) (validationResult, bool) {
 	_, normalized, err := normalizeID(id)
 	if err != nil {
@@ -331,7 +331,7 @@ func statusReferenceFinding(doc ADR, message, fix string) Diagnostic {
 }
 
 // finalizeValidation sorts findings deterministically by path then check
-// name (per SPEC-0001) and fills in the summary counts.
+// name and fills in the summary counts.
 func finalizeValidation(findings []Diagnostic, summary validationSummary) validationResult {
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].Path != findings[j].Path {

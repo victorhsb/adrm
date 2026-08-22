@@ -36,8 +36,11 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 - `docs/adr`: project ADRs managed by `canon`.
 - `docs/domain`: the project Domain Model (one canonical concept per entry)
   managed by `canon`.
-- `docs/commands.md`, `docs/adr-format.md`, `docs/spec-format.md`,
-  `docs/domain-format.md`: format and command references.
+- `.canon.jsonc`: repository configuration (conventions only, discovered from
+  the corpus upward; see `docs/config.md` and ADR-0015).
+- `docs/commands.md`, `docs/config.md`, `docs/adr-format.md`,
+  `docs/spec-format.md`, `docs/domain-format.md`: format and command
+  references.
 - `docs/agent-workflows.md`: expected agent workflow.
 - `docs/roadmap.md`: planned direction.
 
@@ -48,7 +51,10 @@ directories and independent numbering:
 
 - ADR: stored in `docs/adr` (`--adr-dir`), ids like `ADR-0001`.
 - SPEC: stored in `docs/spec` (`--spec-dir`), ids like `SPEC-0001`; captures
-  functional requirements (`--requirements`, `--acceptance`).
+  functional requirements (`--requirements`, `--acceptance`). This repository
+  does not use SPECs: `docs/spec` is empty, behavioral guarantees live in the
+  test suite, and new SPECs should not be created here. The CLI still
+  supports the kind for other projects.
 - Domain entry: stored in `docs/domain` (`--domain-dir`), ids like `DM-0001`;
   defines one canonical concept per entry (`--definition`, `--avoid`,
   `--relationships`). The set of accepted entries is the Domain Model, the
@@ -62,7 +68,7 @@ and `canon domain new|list|search|validate|init` (ADR-0008). Plain `canon list`,
 three directories; a missing `docs/spec` or `docs/domain` is a warning, not
 an error. Doctor also flags domain-model integrity problems: duplicate
 accepted titles and references to superseded or deprecated entries.
-`validate` (SPEC-0001) runs the deep integrity catalog — malformed files,
+`validate` runs the deep integrity catalog — malformed files,
 duplicate ids, broken references, reciprocity, metadata validity, and
 kind/id/directory coherence — through the shared validation engine
 (ADR-0009); `doctor` is that engine's shallow mode. Use `doctor` to answer
@@ -82,18 +88,23 @@ go run ./cmd/canon search --query "relevant topic"
 go run ./cmd/canon show --id ADR-0001
 ```
 
-Always preview mutations first; every mutating command supports `--dry-run`
-and the dry-run response includes the warning `No changes were made.`:
+Single-document mutations (`accept`, `reject`, `deprecate`, `new`) are
+reversible via git, so run them directly and verify with `show`:
 
 ```sh
-go run ./cmd/canon accept --id ADR-0001 --reason "Approved." --dry-run
+go run ./cmd/canon accept --id ADR-0001 --reason "Approved."
+go run ./cmd/canon show --id ADR-0001
 ```
 
-Apply only after the dry-run plan is correct, then verify with `show`.
+This corpus disables `append` through `.canon.jsonc` (ADR-0015). To evolve a
+document, edit its file directly and let git keep the history; do not
+hand-edit lifecycle metadata (status, dates, id relationships).
 
-`supersede` updates both documents to keep the relationship reciprocal
-(ADR-0004). `accept`/`reject`/`deprecate`/`append` work the same for both
-kinds via `--id`.
+Every mutating command still supports `--dry-run`, and a dry-run response
+includes the warning `No changes were made.` `--dry-run` is required only
+before `supersede`, which updates both documents to keep the relationship
+reciprocal (ADR-0004) and is the messiest mutation to walk back.
+`accept`/`reject`/`deprecate` work the same for every kind via `--id`.
 
 Create ADRs only for project architecture. Architectural commitments may affect
 the CLI contract, ADR/SPEC file formats, query behavior, lifecycle semantics,
@@ -199,8 +210,9 @@ or workflow changes, update the matching document (`docs/commands.md`,
 `docs/adr-format.md`, `docs/spec-format.md`, `docs/agent-workflows.md`) in the
 same change.
 
-Use examples that agents can run non-interactively. Prefer `--dry-run`
-examples for mutating commands.
+Use examples that agents can run non-interactively. Show `--dry-run` only
+where a preview is required, such as `supersede`, or already standard
+practice, such as `skill update`.
 
 ## Coding Guidelines
 

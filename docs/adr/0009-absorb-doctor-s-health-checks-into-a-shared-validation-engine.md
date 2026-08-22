@@ -13,15 +13,15 @@ deprecated_by:
 
 ## Status
 
-proposed
+accepted
 
 ## Context
 
-canon doctor checks repository readiness (directory existence, parseability). The roadmap calls for a validate command with deep corpus integrity checks (SPEC-0001). Three topologies were considered: validate as a fully separate command leaving doctor untouched; validate absorbing doctor as a pure alias; or doctor upgraded in place with no validate command. Duplicated check logic across two commands would drift, and a pure alias would sacrifice doctor's cheap pre-mutation readiness check.
+canon doctor checks repository readiness (directory existence, parseability). The roadmap calls for a validate command with deep corpus integrity checks. Three topologies were considered: validate as a fully separate command leaving doctor untouched; validate absorbing doctor as a pure alias; or doctor upgraded in place with no validate command. Duplicated check logic across two commands would drift, and a pure alias would sacrifice doctor's cheap pre-mutation readiness check.
 
 ## Decision
 
-Implement corpus validation as one shared engine in internal/canon. canon validate runs the full check catalog from SPEC-0001; canon doctor becomes the engine's shallow mode (directory existence and parseability only) and keeps its existing output contract byte-compatible. This ADR records only the command-topology commitment; the validate requirements, severities, and acceptance criteria live in SPEC-0001.
+Implement corpus validation as one shared engine in internal/canon. canon validate runs the full check catalog; canon doctor becomes the engine's shallow mode (directory existence and parseability only) and keeps its existing output contract byte-compatible. This ADR records only the command-topology commitment; the checks and their severities live in the validation engine and its tests.
 
 ## Consequences
 

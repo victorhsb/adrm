@@ -29,25 +29,20 @@ interactive prompts.
    canon show --id ADR-0001
    ```
 
-4. Preview every mutation.
-
-   ```sh
-   canon append --id ADR-0001 --title "Review" --body "Still valid." --dry-run
-   ```
-
-5. Apply only after the dry-run plan is acceptable.
+4. Apply mutations. Single-document mutations are reversible via git, so run
+   them directly; `--dry-run` is optional for these.
 
    ```sh
    canon append --id ADR-0001 --title "Review" --body "Still valid."
    ```
 
-6. Verify the result.
+5. Verify the result.
 
    ```sh
    canon show --id ADR-0001
    ```
 
-7. After mutations, confirm corpus health.
+6. After mutations, confirm corpus health.
 
    ```sh
    canon validate
@@ -105,7 +100,6 @@ the same session rather than batching it for later.
 ## Creating a decision
 
 ```sh
-canon adr new --title "Use SQLite for local query index" --status proposed --dry-run
 canon adr new --title "Use SQLite for local query index" --status proposed --tags "storage,query" --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes." --consequences "The index can be rebuilt from ADR markdown."
 canon show --id ADR-0001
 ```
@@ -116,7 +110,6 @@ SPEC files capture functional requirements with their own numbering and
 directory. They use the same lifecycle commands as ADRs.
 
 ```sh
-canon spec new --title "Local query index" --status proposed --dry-run
 canon spec new --title "Local query index" --tags "storage,query" --context "Agents need fast local lookup." --requirements "Return ADRs by tag and status." --constraints "No external dependencies." --acceptance "list --tag storage returns ADR-0001."
 canon show --id SPEC-0001
 ```
@@ -128,7 +121,6 @@ model first; sharpen an existing entry instead of creating a parallel one.
 
 ```sh
 canon domain search --query "decision"
-canon domain new --title "ADR" --status proposed --dry-run
 canon domain new --title "ADR" --tags "glossary" --definition "A dated, narrowly-scoped architecture commitment." --avoid "design doc: too broad; ticket: tracks work, not decisions" --relationships "See [SPEC](0002-spec.md)."
 canon show --id DM-0001
 ```
@@ -145,8 +137,8 @@ approved.
 
 ```sh
 canon show --id ADR-0001
-canon accept --id ADR-0001 --reason "Approved by the team." --dry-run
 canon accept --id ADR-0001 --reason "Approved by the team."
+canon show --id ADR-0001
 ```
 
 ## Rejecting a decision
@@ -156,7 +148,6 @@ without removing it.
 
 ```sh
 canon show --id ADR-0001
-canon reject --id ADR-0001 --reason "Chose a different approach." --dry-run
 canon reject --id ADR-0001 --reason "Chose a different approach."
 ```
 
@@ -164,6 +155,8 @@ canon reject --id ADR-0001 --reason "Chose a different approach."
 
 Create or identify the replacement document first. `supersede` requires the
 replacement to exist and to be the same kind as the superseded document.
+Always preview with `--dry-run` before applying; `supersede` mutates both
+documents reciprocally, so a wrong id is the messiest to walk back.
 
 ```sh
 canon search --query "old query index"
@@ -179,7 +172,6 @@ Use deprecation when a decision is no longer relevant and there is no direct
 replacement.
 
 ```sh
-canon deprecate --id ADR-0003 --reason "The component was removed." --dry-run
 canon deprecate --id ADR-0003 --reason "The component was removed."
 ```
 

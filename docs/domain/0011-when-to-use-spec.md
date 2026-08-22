@@ -32,4 +32,4 @@ The canonical gate for recording a SPEC. A SPEC is recorded only when the work i
 
 ## Relationships
 
-This gate decides when a [SPEC](0003-spec.md) should exist at all; it absorbs and expands the occasion-based Avoid content of that entry, following the pattern set by [When to Use ADR](0004-when-to-use-adr.md). SPEC-0001 is the exemplar: it defines the expected behavior of `canon validate`.
+This gate decides when a [SPEC](0003-spec.md) should exist at all; it absorbs and expands the occasion-based Avoid content of that entry, following the pattern set by [When to Use ADR](0004-when-to-use-adr.md). This repository does not use SPECs; the gate stays canonical for projects that do.

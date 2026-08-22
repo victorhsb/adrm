@@ -2,8 +2,8 @@
 name: canon-record-gate
 description: Classify candidate knowledge as an ADR, SPEC, Domain Entry, or None, and validate whether a proposed record uses the right kind. Use whenever deciding whether something should be recorded as an architecture decision, behavioral specification, or canonical domain concept; reviewing a proposed record's kind; or separating mixed decisions, requirements, and terminology. This skill judges kind fit and record readiness only, not document format, lifecycle, CLI usage, duplication, or retention.
 ---
-<!-- canon-skill-version: 2 -->
-<!-- canon-skill-hash: sha256:af53a2b2b7a204fcd1d9d4df26caa38968749070784431f5365639213e5740ca -->
+<!-- canon-skill-version: 3 -->
+<!-- canon-skill-hash: sha256:c6baf72e7c00fe928969e09a5fdbaecd0295f3c9ae5e0adbf8a715ae747aeb8f -->
 
 # Canon Record Gate
 

@@ -105,8 +105,8 @@ canon domain init
 
 ## `validate` / `adr validate` / `spec validate` / `domain validate`
 
-Runs the corpus integrity check catalog (SPEC-0001) through the shared
-validation engine (ADR-0009); `doctor` is the engine's shallow mode.
+Runs the corpus integrity check catalog through the shared validation
+engine (ADR-0009); `doctor` is the engine's shallow mode.
 Plain `canon validate` covers all three directories; the prefixed forms scope
 the run to one directory. `validate` never mutates the corpus.
 
@@ -427,10 +427,15 @@ Safety: mutating. Supports `--dry-run`.
 Appends a dated appendix section to an ADR, SPEC, or domain entry.
 
 ```sh
-canon append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index." --dry-run
 canon append --id ADR-0002 --title "Implementation note" --body "The rollout used the local index."
-canon append --id SPEC-0001 --title "Review" --body "Requirements still apply." --dry-run
+canon append --id SPEC-0001 --title "Review" --body "Requirements still apply."
 ```
+
+A repository can disable this command by setting `conventions.append` to
+`false` in `.canon.jsonc` at the repo root (see `docs/config.md`). When
+disabled, `append` fails with `append_disabled` (exit 4) and `show` stops
+suggesting it. The intent is that the corpus edits documents directly and
+lets git track the history.
 
 Safety: mutating. Supports `--dry-run`.
 

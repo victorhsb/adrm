@@ -249,7 +249,7 @@ func isKind(value string) bool {
 }
 
 // runValidate reports corpus integrity findings from the shared validation
-// engine in full mode (SPEC-0001). An empty kind validates the whole corpus;
+// engine in full mode. An empty kind validates the whole corpus;
 // a kind from `canon adr validate`, `canon spec validate`, or
 // `canon domain validate` scopes the run. The command never mutates.
 func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, kind string) int {
@@ -692,12 +692,14 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	if err != nil {
 		return handleReadError(stdout, opts, "show", err)
 	}
+	nextActions := []NextAction{}
+	if cfg, _, cfgErr := LoadConfig(store.Dir); cfgErr != nil || cfg.AppendEnabled() {
+		nextActions = append(nextActions, NextAction{Command: fmt.Sprintf("canon append --id %s --title Note --body \"...\"", adr.ID), Description: "Add an appendix.", Safety: "write"})
+	}
 	writeEnvelope(stdout, Envelope{
-		Command: "show",
-		Data:    map[string]any{"adr": adr},
-		NextActions: []NextAction{
-			{Command: fmt.Sprintf("canon append --id %s --title Note --body \"...\" --dry-run", adr.ID), Description: "Preview adding an appendix.", Safety: "preview"},
-		},
+		Command:     "show",
+		Data:        map[string]any{"adr": adr},
+		NextActions: nextActions,
 	}, opts.Format)
 	return exitOK
 }
@@ -945,6 +947,15 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope("append", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
+	}
+	cfg, cfgPath, err := LoadConfig(store.Dir)
+	if err != nil {
+		writeEnvelope(stdout, errorEnvelope("append", "invalid_config", "config", err.Error(), fmt.Sprintf("Fix or remove %s.", cfgPath)), opts.Format)
+		return exitState
+	}
+	if !cfg.AppendEnabled() {
+		writeEnvelope(stdout, errorEnvelope("append", "append_disabled", "config", fmt.Sprintf("the append command is disabled by %s", cfgPath), "Edit the document file directly; git tracks the history."), opts.Format)
+		return exitState
 	}
 	adr, err := store.Read(*id)
 	if err != nil {

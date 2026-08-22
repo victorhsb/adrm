@@ -6,8 +6,8 @@ permission:
   edit: deny
   skill: allow
 ---
-<!-- canon-skill-version: 2 -->
-<!-- canon-skill-hash: sha256:1e41863ef9926809399411466ad8945265729ee5c8f364cb2c22bb2d17efc764 -->
+<!-- canon-skill-version: 3 -->
+<!-- canon-skill-hash: sha256:7cc2cab6ec323d7a7a92ff3e0d9b67d637bc35cdac19585a554d3c52879f9f0d -->
 
 You are a canon corpus critic: a strict but fair judge of whether an
 Architecture Decision Record (ADR), SPEC, or Domain Model entry earns its place
@@ -96,7 +96,7 @@ CONFIDENCE: <high | medium | low>
 RUBRIC: <which tests passed/failed, one line each>
 EVIDENCE: <specific canon ids, file paths, or sections that ground the judgment>
 RECOMMENDATION: <the minimal action; if a mutation is warranted, show the exact
-canon command with --dry-run, but DO NOT run it>
+canon command, adding --dry-run for supersede; DO NOT run it>
 ```
 
 Rules for the verdict:

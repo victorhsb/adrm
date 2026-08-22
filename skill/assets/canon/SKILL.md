@@ -10,15 +10,15 @@ Use canon to manage Architecture Decision Records without guessing repository st
 ## Operating rules
 
 1. Start with `canon commands` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `canon doctor` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, preview initialization with `canon adr init --dry-run`, `canon spec init --dry-run`, or `canon domain init --dry-run` before applying. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `canon validate` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
+2. Run `canon doctor` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, initialize it with `canon adr init`, `canon spec init`, or `canon domain init`. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `canon validate` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
 3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `canon --format context adr list --status accepted` emits concise Markdown; use context format only with list commands. Every JSON response has `schema_version`, `status`, `data`, and optional `error` / `next_actions`.
-4. For every mutating command, run the same command with `--dry-run` first and verify the returned plan. The plan response is how you confirm selectors and side effects before anything touches disk; a correct dry-run carries `No changes were made.` in warnings.
+4. Single-document mutations (`accept`, `reject`, `deprecate`, `append`, `new`, `init`) are reversible via git; run them directly and verify with `canon show --id ...`. Run `canon supersede` with `--dry-run` first and check the returned plan, because it mutates two documents reciprocally; a correct dry-run carries `No changes were made.` in warnings.
 5. Use `canon list` (all kinds), `canon adr list` / `canon spec list` / `canon domain list`, `canon search --query ...`, and `canon show --id ...` to gather context before changing a document.
 6. Prefer selectors from CLI output. Document ids are stable strings like `ADR-0001`, `SPEC-0001`, and `DM-0001` and can be passed to `--id` or `--by`.
 
 ## Common commands
 
-Preview each of these with `--dry-run` first (rule 4), then apply:
+Apply these directly and verify with `canon show --id ...` (rule 4); preview `supersede` with `--dry-run` first:
 
 ```sh
 canon adr new --title "Use SQLite for local query index" --status proposed --context "Agents need fast local lookup." --decision "Use SQLite-backed indexes."

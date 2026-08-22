@@ -51,14 +51,14 @@ type assetSpec struct {
 var assetSpecs = []assetSpec{
 	{
 		name:    "canon",
-		version: "10",
+		version: "11",
 		files: []payloadFile{
 			{relativePath: "SKILL.md", sourcePath: "assets/canon/SKILL.md"},
 		},
 	},
 	{
 		name:    "canon-record-gate",
-		version: "2",
+		version: "3",
 		files: []payloadFile{
 			{relativePath: "SKILL.md", sourcePath: "assets/canon-record-gate/SKILL.md"},
 			{relativePath: "references/boundary-examples.md", sourcePath: "assets/canon-record-gate/references/boundary-examples.md"},

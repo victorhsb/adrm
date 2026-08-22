@@ -100,7 +100,7 @@ func TestAgentRenderingIsTargetSpecificAndProjectAgnostic(t *testing.T) {
 		`description = "Judges whether an ADR`,
 		`sandbox_mode = "read-only"`,
 		`developer_instructions = "You are a canon corpus critic:`,
-		`# canon-skill-version: 2`,
+		`# canon-skill-version: 3`,
 		`# canon-skill-hash: sha256:`,
 	} {
 		if !strings.Contains(codex, want) {

@@ -16,7 +16,7 @@
   `adr`/`spec`/`domain new|list|search|validate|init`. Plain `list`,
   `search`, and `validate` cover all kinds, and commands taking `--id` route
   by id prefix.
-- Added `canon validate` (SPEC-0001), a deep corpus integrity catalog covering
+- Added `canon validate`, a deep corpus integrity catalog covering
   malformed files, duplicate ids, broken references, reciprocity, status and
   date validity, and kind/id/directory coherence. It runs through a shared
   validation engine (ADR-0009) that absorbed `doctor`'s checks: `doctor` is

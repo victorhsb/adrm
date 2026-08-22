@@ -506,7 +506,7 @@ func TestSkillInstallClaudeTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read claude agent: %v", err)
 	}
-	for _, want := range []string{"tools: Read, Grep, Glob, Bash", "model: inherit", "canon-skill-version: 2"} {
+	for _, want := range []string{"tools: Read, Grep, Glob, Bash", "model: inherit", "canon-skill-version: 3"} {
 		if !strings.Contains(string(content), want) {
 			t.Fatalf("claude agent missing %q:\n%s", want, content)
 		}
@@ -588,7 +588,7 @@ func TestSkillInstallRepeatedTargetsAndCodex(t *testing.T) {
 		`name = "canon-critic"`,
 		`sandbox_mode = "read-only"`,
 		`developer_instructions = "You are a canon corpus critic:`,
-		`# canon-skill-version: 2`,
+		`# canon-skill-version: 3`,
 		`# canon-skill-hash: sha256:`,
 		"canon-record-gate",
 	} {

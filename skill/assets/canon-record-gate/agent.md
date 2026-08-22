@@ -85,7 +85,7 @@ CONFIDENCE: <high | medium | low>
 RUBRIC: <which tests passed/failed, one line each>
 EVIDENCE: <specific canon ids, file paths, or sections that ground the judgment>
 RECOMMENDATION: <the minimal action; if a mutation is warranted, show the exact
-canon command with --dry-run, but DO NOT run it>
+canon command, adding --dry-run for supersede; DO NOT run it>
 ```
 
 Rules for the verdict:
