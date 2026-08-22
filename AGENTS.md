@@ -52,8 +52,8 @@ directories and independent numbering:
 - ADR: stored in `docs/adr` (`--adr-dir`), ids like `ADR-0001`.
 - SPEC: stored in `docs/spec` (`--spec-dir`), ids like `SPEC-0001`; captures
   functional requirements (`--requirements`, `--acceptance`). This repository
-  does not use SPECs: `docs/spec` is empty, behavioral guarantees live in the
-  test suite, and new SPECs should not be created here. The CLI still
+  does not use SPECs: `docs/spec` is absent, behavioral guarantees live in
+  the test suite, and new SPECs should not be created here. The CLI still
   supports the kind for other projects.
 - Domain entry: stored in `docs/domain` (`--domain-dir`), ids like `DM-0001`;
   defines one canonical concept per entry (`--definition`, `--avoid`,
