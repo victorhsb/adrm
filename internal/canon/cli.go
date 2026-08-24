@@ -217,7 +217,7 @@ func runVersion(stdout io.Writer, opts GlobalOptions) int {
 	writeEnvelope(stdout, Envelope{
 		Command: "version",
 		Data: map[string]any{
-			"version": Version,
+			"version": versionString(),
 		},
 		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"}},
 	}, opts.Format)

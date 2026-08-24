@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-- Added `canon version`, printing the build version (`dev` for source builds;
-  release builds inject it via `-ldflags "-X .../internal/canon.Version=vX.Y.Z"`).
+- Added `canon version`, printing the build version. `scripts/install.sh`
+  stamps the nearest git tag plus commits since and the short hash (for
+  example `v0.2.0-1-g0ebd91f`); plain `go build` reports the pseudo-version
+  stamped in Go build info, and unstamped builds report `dev`.
 
 ## v0.2.0 - 2026-08-04
 

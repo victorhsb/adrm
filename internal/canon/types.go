@@ -18,11 +18,6 @@ const (
 	PrefixDomain = "DM-"
 )
 
-// Version is the canon build version. It defaults to "dev" and can be
-// overridden at build time with
-// -ldflags "-X github.com/victorhsb/canon/internal/canon.Version=v1.2.3".
-var Version = "dev"
-
 type Envelope struct {
 	SchemaVersion string       `json:"schema_version"`
 	Command       string       `json:"command"`

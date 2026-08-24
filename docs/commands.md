@@ -65,9 +65,11 @@ Safety: read-only.
 
 ## `version`
 
-Prints the canon build version. Builds from source report `dev`; release builds
-inject the version at build time with
-`-ldflags "-X github.com/victorhsb/canon/internal/canon.Version=vX.Y.Z"`.
+Prints the canon build version. `scripts/install.sh` injects the nearest git
+tag plus commits since and the short hash (for example
+`v0.2.0-1-g0ebd91f`). Plain `go build` reports the pseudo-version stamped in
+Go build info (for example `v0.2.1-0.20260808014319-0ebd91f91670+dirty`),
+and `go run` or other unstamped builds report `dev`.
 
 ```sh
 canon version

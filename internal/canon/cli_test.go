@@ -113,14 +113,14 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("schema_version = %v", env["schema_version"])
 	}
 	data := env["data"].(map[string]any)
-	if data["version"] != Version {
-		t.Fatalf("version = %v, want %q", data["version"], Version)
+	if data["version"] != versionString() {
+		t.Fatalf("version = %v, want %q", data["version"], versionString())
 	}
 	code, text := runRawForTest(t, "--format", "text", "version")
 	if code != exitOK {
 		t.Fatalf("text code = %d", code)
 	}
-	if !strings.Contains(text, "version: "+Version) {
+	if !strings.Contains(text, "version: "+versionString()) {
 		t.Fatalf("text output missing version: %q", text)
 	}
 	if strings.Contains(text, "schema_version") {

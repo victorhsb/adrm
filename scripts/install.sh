@@ -98,7 +98,8 @@ BUILD_DIR=$(mktemp -d)
 trap 'rm -rf "$BUILD_DIR"' EXIT
 
 cd "$REPO_ROOT"
-go build -o "$BUILD_DIR/$BINARY_NAME" ./cmd/canon
+VERSION=$(git describe --tags --long --always --dirty 2>/dev/null || echo dev)
+go build -ldflags "-X github.com/victorhsb/canon/internal/canon.Version=$VERSION" -o "$BUILD_DIR/$BINARY_NAME" ./cmd/canon
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "Would install $TARGET"
