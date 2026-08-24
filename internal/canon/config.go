@@ -106,7 +106,7 @@ func stripJSONComments(data []byte) []byte {
 				continue
 			case '*':
 				i += 2
-				for i < len(data) && !(data[i] == '*' && i+1 < len(data) && data[i+1] == '/') {
+				for i < len(data) && (data[i] != '*' || i+1 >= len(data) || data[i+1] != '/') {
 					if data[i] == '\n' {
 						out = append(out, '\n')
 					}
