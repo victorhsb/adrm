@@ -104,6 +104,10 @@ func renderDataText(out io.Writer, command string, data any) {
 		renderDoctorText(out, payload)
 	case "validate", "adr validate", "spec validate", "domain validate":
 		renderValidateText(out, payload)
+	case "config show":
+		renderConfigShowText(out, payload)
+	case "config validate":
+		renderConfigValidateText(out, payload)
 	case "list":
 		renderListText(out, payload)
 	case "show":
@@ -207,6 +211,59 @@ func renderValidateText(out io.Writer, payload map[string]any) {
 		fmt.Fprintf(out, "  %s: %s - %s\n", f.Name, f.Status, f.Message)
 	}
 	fmt.Fprintf(out, "summary: files_checked=%d errors=%d warnings=%d\n", data.Summary.FilesChecked, data.Summary.Errors, data.Summary.Warnings)
+}
+
+// joinOrDash renders a string list for single-line text output.
+func joinOrDash(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, ", ")
+}
+
+func renderConfigShowText(out io.Writer, payload map[string]any) {
+	var data configReport
+	if !jsonCopy(payload, &data) {
+		return
+	}
+	fmt.Fprintf(out, "source: %s\n", data.Source)
+	if data.Path != "" {
+		fmt.Fprintf(out, "path: %s\n", data.Path)
+	}
+	fmt.Fprintln(out, "discovery paths:")
+	for _, kind := range supportedKinds {
+		fmt.Fprintf(out, "  %s: %s\n", kind, data.DiscoveryPaths[kind])
+	}
+	conv := data.Effective.Conventions
+	fmt.Fprintln(out, "effective configuration:")
+	fmt.Fprintf(out, "  schema_version: %s\n", data.Effective.SchemaVersion)
+	fmt.Fprintf(out, "  append: %t\n", conv.Append)
+	fmt.Fprintf(out, "  required_kinds: %s\n", strings.Join(conv.RequiredKinds, ", "))
+	fmt.Fprintf(out, "  validation.strict: %t\n", conv.Validation.Strict)
+	fmt.Fprintf(out, "  lifecycle.require_reason: %t\n", conv.Lifecycle.RequireReason)
+	fmt.Fprintf(out, "  lifecycle.new_documents_must_be_proposed: %t\n", conv.Lifecycle.NewDocumentsMustBeProposed)
+	if len(conv.Tags) == 0 {
+		fmt.Fprintln(out, "  tags: unrestricted for every kind")
+	} else {
+		fmt.Fprintln(out, "  tags:")
+		for _, kind := range supportedKinds {
+			policy, ok := conv.Tags[kind]
+			if !ok {
+				fmt.Fprintf(out, "    %s: unrestricted\n", kind)
+				continue
+			}
+			fmt.Fprintf(out, "    %s allowed: %s\n", kind, allowedTagsDisplay(policy.Allowed))
+		}
+	}
+	fmt.Fprintf(out, "recognized keys: %s\n", joinOrDash(data.RecognizedKeys))
+	fmt.Fprintf(out, "unknown keys: %s\n", joinOrDash(data.UnknownKeys))
+}
+
+func renderConfigValidateText(out io.Writer, payload map[string]any) {
+	renderValidateText(out, payload)
+	if raw, ok := payload["config"].(map[string]any); ok {
+		renderConfigShowText(out, raw)
+	}
 }
 
 func renderListText(out io.Writer, payload map[string]any) {

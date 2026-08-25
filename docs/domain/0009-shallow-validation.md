@@ -17,7 +17,7 @@ accepted
 
 ## Definition
 
-Readiness checks answering 'can I work here?': directories exist and files parse.
+Readiness checks answering 'can I work here?': required directories exist and every present file parses. Directories for kinds the repository configuration does not require may be absent without weakening readiness.
 
 ## Avoid
 

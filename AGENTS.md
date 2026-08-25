@@ -22,13 +22,16 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 ## Project Shape
 
 - `cmd/canon`: CLI entrypoint.
-- `internal/canon`: command handling (`cli.go`), storage (`store.go`), output
-  envelopes, command registry, and tests.
+- `internal/canon`: command handling (`cli.go`, `config_command.go`), storage
+  (`store.go`), configuration (`config.go`), output envelopes, command
+  registry, and tests.
 - `skill`: bundled agent skill and subagent source payloads under
   `skill/assets`, embedded and rendered by `skill.go` with per-asset versions,
   per-file hashes, and install/update helpers.
 - `.agents/skills/project-planning`: repository-local planning workflow that
   discovers current ADR and SPEC constraints before producing a plan.
+- `.agents/skills/canon-config-policy`: pipeline checklist for adding,
+  changing, or removing `.canon.jsonc` policy keys in the configuration layer.
 - `.opencode/agents/canon-critic.md`: managed OpenCode rendering of the bundled
   read-only subagent that judges whether an ADR, SPEC, or Domain entry is worth
   keeping or creating. Invocable via `@canon-critic`.
@@ -37,7 +40,7 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 - `docs/domain`: the project Domain Model (one canonical concept per entry)
   managed by `canon`.
 - `.canon.jsonc`: repository configuration (conventions only, discovered from
-  the corpus upward; see `docs/config.md` and ADR-0015).
+  the corpus upward; see `docs/config.md` and ADR-0016).
 - `docs/commands.md`, `docs/config.md`, `docs/adr-format.md`,
   `docs/spec-format.md`, `docs/domain-format.md`: format and command
   references.
@@ -52,9 +55,11 @@ directories and independent numbering:
 - ADR: stored in `docs/adr` (`--adr-dir`), ids like `ADR-0001`.
 - SPEC: stored in `docs/spec` (`--spec-dir`), ids like `SPEC-0001`; captures
   functional requirements (`--requirements`, `--acceptance`). This repository
-  does not use SPECs: `docs/spec` is absent, behavioral guarantees live in
-  the test suite, and new SPECs should not be created here. The CLI still
-  supports the kind for other projects.
+  does not use SPECs: `docs/spec` is absent by policy
+  (`.canon.jsonc` sets `conventions.required_kinds` to ADR and Domain), so
+  `doctor` and `validate` treat the absent store as configured and healthy,
+  behavioral guarantees live in the test suite, and new SPECs should not be
+  created here. The CLI still supports the kind for other projects.
 - Domain entry: stored in `docs/domain` (`--domain-dir`), ids like `DM-0001`;
   defines one canonical concept per entry (`--definition`, `--avoid`,
   `--relationships`). The set of accepted entries is the Domain Model, the
@@ -64,15 +69,36 @@ Commands that create or scope documents by kind are kind-prefixed:
 `canon adr new|list|search|validate|init`, `canon spec new|list|search|validate|init`,
 and `canon domain new|list|search|validate|init` (ADR-0008). Plain `canon list`,
 `canon search`, and `canon validate` cover all kinds. Commands that take
-`--id` route by id prefix, so they need no kind prefix. `doctor` checks all
-three directories; a missing `docs/spec` or `docs/domain` is a warning, not
-an error. Doctor also flags domain-model integrity problems: duplicate
+`--id` route by id prefix, so they need no kind prefix. `doctor` checks the
+kinds the configuration requires (ADR-0016); a missing required store is a
+warning, while a missing non-required store is an ok diagnostic. Doctor also
+flags domain-model integrity problems: duplicate
 accepted titles and references to superseded or deprecated entries.
 `validate` runs the deep integrity catalog — malformed files,
-duplicate ids, broken references, reciprocity, metadata validity, and
-kind/id/directory coherence — through the shared validation engine
+duplicate ids, broken references, reciprocity, metadata validity,
+kind/id/directory coherence, and configured tag vocabularies — through the shared validation engine
 (ADR-0009); `doctor` is that engine's shallow mode. Use `doctor` to answer
 "can I work here?" and `validate` to answer "is my corpus healthy?"
+
+## Repository Policy
+
+`.canon.jsonc` holds this corpus's enforced conventions (ADR-0016;
+see `docs/config.md` for the schema). Inspect them with
+`go run ./cmd/canon config show` and validate the file with
+`go run ./cmd/canon config validate`. The enabled policies:
+
+- `append` is disabled; edit document files directly and let git keep the
+  history.
+- `required_kinds` is ADR and Domain, so the absent `docs/spec` directory is
+  intentional and healthy.
+- `validation.strict` is on: `validate` exits 4 whenever warnings exist.
+- `lifecycle.require_reason` is on: always pass `--reason` to `accept`,
+  `reject`, `supersede`, and `deprecate`.
+- `lifecycle.new_documents_must_be_proposed` is on: create documents with the
+  default `proposed` status and move them forward explicitly.
+- `tags` restricts ADR tags to the configured vocabulary and Domain tags to
+  `glossary` and `process`; adding a new tag means extending the vocabulary
+  in the same change. SPEC tags are unrestricted.
 
 ## Document Rules (ADR/SPEC/Domain)
 
@@ -96,7 +122,7 @@ go run ./cmd/canon accept --id ADR-0001 --reason "Approved."
 go run ./cmd/canon show --id ADR-0001
 ```
 
-This corpus disables `append` through `.canon.jsonc` (ADR-0015). To evolve a
+This corpus disables `append` through `.canon.jsonc` (ADR-0016). To evolve a
 document, edit its file directly and let git keep the history; do not
 hand-edit lifecycle metadata (status, dates, id relationships).
 

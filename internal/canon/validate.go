@@ -46,15 +46,20 @@ type scannedDoc struct {
 }
 
 // shallowDiagnostics is the engine's shallow mode: directory existence and
-// parseability only. It reproduces doctor's historical check names and
-// messages exactly, so doctor's output contract is preserved. A parse
-// failure aborts the scan (shallow mode does not isolate malformed files)
-// and returns the failing store's kind with the error.
-func shallowDiagnostics(repo Repo) (checks []Diagnostic, failedKind string, err error) {
+// parseability only. Missing stores are warnings only when the effective
+// configuration requires their kind (ADR-0016); optional absent stores are
+// healthy and never suggest initialization. A parse failure aborts the scan
+// (shallow mode does not isolate malformed files) and returns the failing
+// store's kind with the error.
+func shallowDiagnostics(repo Repo, cfg EffectiveConfig) (checks []Diagnostic, failedKind string, err error) {
 	checks = []Diagnostic{}
 	for _, store := range []Store{repo.ADR, repo.Spec, repo.Domain} {
 		label := store.Kind
 		if !store.Exists() {
+			if !cfg.KindRequired(label) {
+				checks = append(checks, Diagnostic{Name: label + "_directory", Status: "ok", Message: fmt.Sprintf("%s does not exist (optional kind, not required by %s)", store.Dir, configSourceLabel(cfg))})
+				continue
+			}
 			checks = append(checks, Diagnostic{Name: label + "_directory", Status: "warning", Message: fmt.Sprintf("%s does not exist", store.Dir), SuggestedFix: fmt.Sprintf("Run `canon %s init --dry-run`, then `canon %s init`.", label, label)})
 			continue
 		}
@@ -72,14 +77,18 @@ func shallowDiagnostics(repo Repo) (checks []Diagnostic, failedKind string, err 
 // one in isolation, so one malformed file does not mask the rest of the
 // corpus. It returns the parsed documents, the scan-level findings (missing
 // or unreadable directories, malformed files), and the number of files
-// examined.
-func scanStores(repo Repo, kind string) ([]scannedDoc, []Diagnostic, int) {
+// examined. A store is only missing when the effective configuration
+// requires its kind; optional absent stores are skipped without findings.
+func scanStores(repo Repo, kind string, cfg EffectiveConfig) ([]scannedDoc, []Diagnostic, int) {
 	findings := []Diagnostic{}
 	var docs []scannedDoc
 	filesChecked := 0
 
 	for _, store := range storesForScope(repo, kind) {
 		if !store.Exists() {
+			if !cfg.KindRequired(store.Kind) {
+				continue
+			}
 			findings = append(findings, Diagnostic{
 				Name:         "missing_directory",
 				Status:       "warning",
@@ -124,9 +133,9 @@ func scanStores(repo Repo, kind string) ([]scannedDoc, []Diagnostic, int) {
 }
 
 // validateCorpus runs the full corpus check catalog over the stores in
-// scope.
-func validateCorpus(repo Repo, kind string) validationResult {
-	docs, findings, filesChecked := scanStores(repo, kind)
+// scope, applying the effective configuration's required-kind and tag rules.
+func validateCorpus(repo Repo, kind string, cfg EffectiveConfig) validationResult {
+	docs, findings, filesChecked := scanStores(repo, kind, cfg)
 
 	byID := map[string]ADR{}
 	for _, scanned := range docs {
@@ -135,7 +144,7 @@ func validateCorpus(repo Repo, kind string) validationResult {
 
 	findings = append(findings, duplicateIDFindings(docs)...)
 	for _, scanned := range docs {
-		findings = append(findings, validateDocument(scanned, byID)...)
+		findings = append(findings, validateDocument(scanned, byID, cfg)...)
 	}
 
 	return finalizeValidation(findings, validationSummary{FilesChecked: filesChecked})
@@ -145,12 +154,12 @@ func validateCorpus(repo Repo, kind string) validationResult {
 // references against the whole corpus. Only findings about the target
 // document are reported. The boolean result is false when no parseable file
 // claims the id.
-func validateSingle(repo Repo, id string) (validationResult, bool) {
+func validateSingle(repo Repo, id string, cfg EffectiveConfig) (validationResult, bool) {
 	_, normalized, err := normalizeID(id)
 	if err != nil {
 		return validationResult{}, false
 	}
-	docs, _, _ := scanStores(repo, "")
+	docs, _, _ := scanStores(repo, "", cfg)
 
 	byID := map[string]ADR{}
 	var target scannedDoc
@@ -166,7 +175,7 @@ func validateSingle(repo Repo, id string) (validationResult, bool) {
 		return validationResult{}, false
 	}
 
-	findings := validateDocument(target, byID)
+	findings := validateDocument(target, byID, cfg)
 	return finalizeValidation(findings, validationSummary{FilesChecked: 1}), true
 }
 
@@ -212,10 +221,23 @@ func duplicateIDFindings(docs []scannedDoc) []Diagnostic {
 
 // validateDocument runs the per-document checks: status validity, date
 // format, reference integrity and reciprocity, status/reference consistency,
-// and kind/id/directory coherence.
-func validateDocument(scanned scannedDoc, byID map[string]ADR) []Diagnostic {
+// kind/id/directory coherence, and the configured tag vocabulary (ADR-0016).
+func validateDocument(scanned scannedDoc, byID map[string]ADR, cfg EffectiveConfig) []Diagnostic {
 	doc := scanned.Doc
 	findings := []Diagnostic{}
+
+	if allowed, restricted := cfg.AllowedTags(scanned.StoreKind); restricted {
+		if offending := tagsOutsideAllowed(doc.Tags, allowed); len(offending) > 0 {
+			findings = append(findings, Diagnostic{
+				Name:         "disallowed_tag",
+				Status:       "error",
+				Message:      fmt.Sprintf("%s has tags outside the %s vocabulary from %s: %s (allowed: %s)", doc.ID, scanned.StoreKind, configSourceLabel(cfg), strings.Join(offending, ", "), allowedTagsDisplay(allowed)),
+				SuggestedFix: fmt.Sprintf("Remove the disallowed tags from %s, or add them to conventions.tags.%s.allowed in %s.", doc.ID, scanned.StoreKind, configSourceLabel(cfg)),
+				Path:         doc.Path,
+				ID:           doc.ID,
+			})
+		}
+	}
 
 	if !validStatus(normalizeStatus(doc.Status)) {
 		findings = append(findings, Diagnostic{
@@ -317,6 +339,34 @@ func validateDocument(scanned scannedDoc, byID map[string]ADR) []Diagnostic {
 	}
 
 	return findings
+}
+
+// tagsOutsideAllowed returns the sorted tags that fall outside the allowed
+// vocabulary. Comparison is exact and case-sensitive, matching --tag filters.
+func tagsOutsideAllowed(tags, allowed []string) []string {
+	allowedSet := map[string]bool{}
+	for _, tag := range allowed {
+		allowedSet[tag] = true
+	}
+	seen := map[string]bool{}
+	offending := []string{}
+	for _, tag := range tags {
+		if allowedSet[tag] || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		offending = append(offending, tag)
+	}
+	sort.Strings(offending)
+	return offending
+}
+
+// allowedTagsDisplay renders an allowed vocabulary for messages.
+func allowedTagsDisplay(allowed []string) string {
+	if len(allowed) == 0 {
+		return "none"
+	}
+	return strings.Join(allowed, ", ")
 }
 
 func statusReferenceFinding(doc ADR, message, fix string) Diagnostic {

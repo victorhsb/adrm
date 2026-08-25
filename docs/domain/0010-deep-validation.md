@@ -17,7 +17,7 @@ accepted
 
 ## Definition
 
-Integrity checks answering 'is my corpus healthy?': metadata validity, duplicate ids or titles, reference integrity, and reciprocity.
+Integrity checks answering 'is my corpus healthy?': metadata validity, duplicate ids or titles, reference integrity, reciprocity, and configured metadata conventions such as allowed tag vocabularies.
 
 ## Avoid
 

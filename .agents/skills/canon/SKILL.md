@@ -2,8 +2,8 @@
 name: canon
 description: Manage Architecture Decision Records (ADRs), SPECs, and domain entries with the canon CLI. Use whenever creating, recording, or revisiting an architectural decision; defining or updating a canonical domain concept; transitioning an ADR, SPEC, or domain entry through its lifecycle (accept, reject, supersede, deprecate, append); querying decision history or the domain model; or initializing document storage - even if the user does not mention canon by name.
 ---
-<!-- canon-skill-version: 11 -->
-<!-- canon-skill-hash: sha256:32f0994ae9058d08bcb7b302d37952c5a7bea369c021e4baacad1e9fadef1e85 -->
+<!-- canon-skill-version: 12 -->
+<!-- canon-skill-hash: sha256:a02200aba9012cc695832fd71d7f6d314529cee3de46469def3caf5a476e8ef7 -->
 
 # CANON Agent Skill
 
@@ -12,7 +12,8 @@ Use canon to manage Architecture Decision Records without guessing repository st
 ## Operating rules
 
 1. Start with `canon commands` to inspect command metadata, side effects, selectors, examples, and dry-run availability.
-2. Run `canon doctor` before mutating documents. If it reports a missing ADR, SPEC, or domain directory, initialize it with `canon adr init`, `canon spec init`, or `canon domain init`. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `canon validate` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
+2. Run `canon config show` to learn the repository's enforced conventions before mutating documents: which kinds are required, whether lifecycle transitions require `--reason`, whether new documents must start as `proposed`, and which tags each kind allows. A kind that is not required may be absent and healthy; its commands still work once its store exists. Errors with category `config` (`invalid_config`, `config_scope_mismatch`, `reason_required_by_config`, `initial_status_restricted`, `disallowed_tag`, `append_disabled`) mean repository policy was enforced; satisfy the policy (adjust reason, status, or tags, or fix the configuration) instead of retrying the same call. Run `canon config validate` when the configuration file itself looks broken.
+3. Run `canon doctor` before mutating documents. If it reports a missing required ADR, SPEC, or domain directory, initialize it with `canon adr init`, `canon spec init`, or `canon domain init`. Doctor also flags domain-model integrity problems: duplicate accepted titles and references to superseded or deprecated entries. For deep integrity checks (malformed files, duplicate ids, broken references, reciprocity, metadata validity), run `canon validate` — doctor answers "can I work here?", validate answers "is my corpus healthy?".
 3. Use JSON output unless a human explicitly asks for text or a bounded prompt projection. For prompt injection, `canon --format context adr list --status accepted` emits concise Markdown; use context format only with list commands. Every JSON response has `schema_version`, `status`, `data`, and optional `error` / `next_actions`.
 4. Single-document mutations (`accept`, `reject`, `deprecate`, `append`, `new`, `init`) are reversible via git; run them directly and verify with `canon show --id ...`. Run `canon supersede` with `--dry-run` first and check the returned plan, because it mutates two documents reciprocally; a correct dry-run carries `No changes were made.` in warnings.
 5. Use `canon list` (all kinds), `canon adr list` / `canon spec list` / `canon domain list`, `canon search --query ...`, and `canon show --id ...` to gather context before changing a document.
@@ -77,4 +78,4 @@ Domain entries are the project's single source of truth for what things mean: on
 
 ## Recovery
 
-If a command fails, read `error.code`, `error.category`, and `error.suggested_fix`. Prefer the suggested next diagnostic command over guessing. For missing or unreadable ADR state, run `canon doctor`.
+If a command fails, read `error.code`, `error.category`, and `error.suggested_fix`. Prefer the suggested next diagnostic command over guessing. For missing or unreadable ADR state, run `canon doctor`. For `config`-category failures, inspect `canon config show` and `canon config validate`, then adjust the call to the effective policy.

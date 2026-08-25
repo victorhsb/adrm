@@ -17,7 +17,7 @@ accepted
 
 ## Definition
 
-The full set of ADR, SPEC, and domain entry files across all three directories, treated as one subject of integrity checks.
+The full set of ADR, SPEC, and domain entry files across every present managed directory, treated as one subject of integrity checks. The corpus includes every present supported kind; required kinds determined by repository configuration decide readiness, not corpus membership.
 
 ## Avoid
 

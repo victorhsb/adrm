@@ -2,18 +2,18 @@
 kind: adr
 id: ADR-0015
 title: Add repo-root configuration file
-status: accepted
+status: superseded
 date: 2026-08-20
 tags: 
 supersedes: 
-superseded_by: 
+superseded_by: ADR-0016
 deprecated_by: 
 ---
 # ADR-0015: Add repo-root configuration file
 
 ## Status
 
-accepted
+superseded
 
 ## Context
 
@@ -32,3 +32,9 @@ canon gains a configuration axis that may grow over time; appendices from before
 Date: 2026-08-20
 
 Approved during design discussion.
+
+## History: Superseded
+
+Date: 2026-08-24
+
+Superseded by ADR-0016. ADR-0016 replaces the single-key configuration file with the repository policy layer contract.

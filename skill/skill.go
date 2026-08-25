@@ -51,7 +51,7 @@ type assetSpec struct {
 var assetSpecs = []assetSpec{
 	{
 		name:    "canon",
-		version: "11",
+		version: "12",
 		files: []payloadFile{
 			{relativePath: "SKILL.md", sourcePath: "assets/canon/SKILL.md"},
 		},

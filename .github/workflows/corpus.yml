@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - "docs/**"
+      - ".canon.jsonc"
       - ".github/workflows/corpus.yml"
   pull_request:
     branches:
       - main
     paths:
       - "docs/**"
+      - ".canon.jsonc"
 
 permissions:
   contents: read
@@ -28,6 +30,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Validate repository configuration
+        run: go run ./cmd/canon config validate
 
       - name: Validate ADR/SPEC/Domain corpus
         run: go run ./cmd/canon validate

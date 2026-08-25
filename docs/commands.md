@@ -94,6 +94,18 @@ canon doctor
 Safety: read-only. Reports a warning when any directory is missing or any
 integrity check fails.
 
+Required kinds: repository configuration declares which stores must exist
+(`conventions.required_kinds`, see `docs/config.md`). A missing required
+store is a warning with an `init` next action; a missing non-required store
+is reported as an `ok` diagnostic and never suggests initialization. Without
+configuration all three stores are required, matching historical behavior.
+Doctor next actions are built from the actual missing required stores.
+
+Errors:
+
+- `invalid_config` / `config_scope_mismatch`: the repository configuration
+  could not be resolved; run `canon config validate` for findings.
+
 Common next action when missing storage:
 
 ```sh
@@ -135,8 +147,13 @@ Checks, as findings with severity in the `status` field:
   nonexistent id), `reciprocity_violation` (ADR-0004: `A.superseded_by=B`
   requires `B.supersedes` to contain `A`), `invalid_status`, `kind_mismatch`
   (kind field contradicts the id prefix), `directory_mismatch` (document
-  stored in the wrong kind's directory).
-- Warnings: `missing_directory`, `status_reference_inconsistency` (status
+  stored in the wrong kind's directory), `disallowed_tag` (a document's tags
+  fall outside the vocabulary configured in `conventions.tags` for its kind;
+  one finding per document names the sorted offending tags, the allowed
+  values, and the controlling config path).
+- Warnings: `missing_directory` (required stores only; a missing
+  non-required store is healthy and produces no finding),
+  `status_reference_inconsistency` (status
   `superseded` without `superseded_by` and vice versa; status `deprecated`
   without `deprecated_by`), `malformed_date` (date is not `YYYY-MM-DD`).
 
@@ -150,7 +167,9 @@ diagnostic shape with optional `path` and `id` fields, carry a concrete
 
 Envelope status is `error` if any error finding exists, else `warning` if any
 warning exists, else `ok`. Exit code is 4 when any error exists, otherwise 0;
-`--strict` also exits 4 when only warnings exist.
+`--strict` also exits 4 when only warnings exist. Repository configuration
+can make strictness permanent (`conventions.validation.strict`); the flag and
+the setting combine by logical OR and neither changes finding severities.
 
 Safety: read-only.
 
@@ -158,6 +177,48 @@ Errors:
 
 - `document_not_found`: no parseable document claims the `--id` value.
 - `id_with_kind_scope`: `--id` passed to a kind-prefixed `validate`.
+- `invalid_config` / `config_scope_mismatch`: the repository configuration
+  could not be resolved; run `canon config validate` for findings.
+
+## `config show`
+
+Shows the effective repository configuration: source (`file` or `defaults`),
+discovered path, per-kind discovery paths, every resolved convention value,
+sorted recognized keys, and sorted unknown key paths. See `docs/config.md`
+for the schema, defaults, and discovery rules.
+
+```sh
+canon config show
+canon --format text config show
+```
+
+Safety: read-only. Rejects `--format context`.
+
+Errors:
+
+- `invalid_config`: the file is malformed, has an unsupported schema version,
+  or declares invalid values (exit 4).
+- `config_scope_mismatch`: the three stores do not resolve to one
+  configuration scope (exit 4).
+
+## `config validate`
+
+Validates `.canon.jsonc` against the configuration schema and reports
+deterministic findings with a summary. When the configuration is valid, the
+response includes the same effective report as `config show`.
+
+```sh
+canon config validate
+```
+
+Findings: `malformed_config`, `unsupported_config_schema`,
+`invalid_config_value`, and `config_scope_mismatch` are errors;
+`unknown_config_key` is a warning so older binaries can expose keys from
+future versions without failing. Exit code is 4 when any error finding
+exists and 0 otherwise; `conventions.validation.strict` does not apply to
+configuration validation itself.
+
+Safety: read-only. Rejects `--format context`.
 
 ## `adr init` / `spec init` / `domain init`
 
@@ -201,6 +262,17 @@ Valid statuses: `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`.
 
 Safety: mutating. Supports `--dry-run`.
 
+Errors:
+
+- `initial_status_restricted`: repository configuration requires new
+  documents to start as `proposed` and `--status` was something else
+  (exit 4, dry-run and apply alike).
+- `disallowed_tag`: repository configuration restricts the kind's tag
+  vocabulary (`conventions.tags`) and a requested tag is outside it
+  (exit 4); the message lists every offending tag and the allowed values.
+- `invalid_config`: the repository configuration could not be resolved
+  (exit 4). Policy gates run before any filesystem access.
+
 ## `spec new`
 
 Creates a new SPEC markdown file. SPEC files capture functional requirements.
@@ -221,7 +293,10 @@ Flags:
 - `--acceptance`: markdown text for the Acceptance Criteria section.
 - `--dry-run`: preview without writing.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. Repository policy gates
+(`initial_status_restricted`, `disallowed_tag`, `invalid_config`) apply as
+for `adr new`; a SPEC store that the configuration does not require still
+accepts new documents.
 
 ## `domain new`
 
@@ -247,7 +322,9 @@ Flags:
   other entries with relative markdown links, e.g. `[SPEC](0002-spec.md)`.
 - `--dry-run`: preview without writing.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. Repository policy gates
+(`initial_status_restricted`, `disallowed_tag`, `invalid_config`) apply as
+for `adr new`.
 
 ## `list` / `adr list` / `spec list` / `domain list`
 
@@ -299,6 +376,12 @@ canon show --id 1
 
 Safety: read-only.
 
+Errors:
+
+- `invalid_config`: the repository configuration could not be resolved, so
+  `show` cannot know which follow-up mutations are legal (exit 4). Fix the
+  configuration; `show` never falls back to defaults here.
+
 ## `search` / `adr search` / `spec search` / `domain search`
 
 Searches id, title, status, tags, kind, and markdown content across ADRs,
@@ -347,6 +430,14 @@ Effects:
 
 Safety: mutating. Supports `--dry-run`.
 
+Errors:
+
+- `reason_required_by_config`: repository configuration requires a reason for
+  lifecycle transitions (`conventions.lifecycle.require_reason`) and
+  `--reason` was blank (exit 4, dry-run and apply alike).
+- `invalid_config`: the repository configuration could not be resolved
+  (exit 4).
+
 ## `reject`
 
 Marks an ADR, SPEC, or domain entry as rejected. For domain entries, a
@@ -370,7 +461,8 @@ Effects:
 - Updates the Status section in the body.
 - Appends a `History: Rejected` section.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. `reason_required_by_config` and
+`invalid_config` apply as for `accept`.
 
 ## `supersede`
 
@@ -401,6 +493,10 @@ Errors:
 
 - `cross_kind_supersede`: the `--id` and `--by` documents have different kinds.
 - `superseding_adr_not_found`: the replacement document was not found.
+- `reason_required_by_config`: repository configuration requires a reason and
+  `--reason` was blank (exit 4).
+- `invalid_config`: the repository configuration could not be resolved
+  (exit 4).
 
 ## `deprecate`
 
@@ -422,7 +518,8 @@ Effects:
 - Updates the Status section in the body.
 - Appends a `History: Deprecated` section.
 
-Safety: mutating. Supports `--dry-run`.
+Safety: mutating. Supports `--dry-run`. `reason_required_by_config` and
+`invalid_config` apply as for `accept`.
 
 ## `append`
 

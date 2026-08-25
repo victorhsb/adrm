@@ -120,6 +120,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			NextActions: []NextAction{
 				{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
 				{Command: "canon doctor", Description: "Check ADR, SPEC, and domain repository readiness.", Safety: "read-only"},
+				{Command: "canon config show", Description: "Inspect the effective repository configuration.", Safety: "read-only"},
 			},
 		}, opts.Format)
 		return exitOK
@@ -142,6 +143,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDoctor(stdout, opts, repo)
 	case "validate":
 		return runValidate(stdout, stderr, opts, repo, commandArgs, "")
+	case "config":
+		return runConfig(stdout, stderr, opts, repo, commandArgs)
 	case "init", "new":
 		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s`, `canon spec %s`, or `canon domain %s`.", command, command, command)), opts.Format)
 		return exitUsage
@@ -267,23 +270,43 @@ func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args [
 		return exitOK
 	}
 	var result validationResult
+	var cfg EffectiveConfig
 	if strings.TrimSpace(*id) != "" {
 		if kind != "" {
 			writeEnvelope(stdout, errorEnvelope(command, "id_with_kind_scope", "usage", "--id is only supported by plain `canon validate`", fmt.Sprintf("Run `canon validate --id %s`; the id prefix already selects the kind.", *id)), opts.Format)
 			return exitUsage
 		}
-		if _, _, err := normalizeID(*id); err != nil {
+		idKind, _, err := normalizeID(*id)
+		if err != nil {
 			writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 			return exitUsage
 		}
-		single, found := validateSingle(repo, *id)
+		resolution, cfgErr := resolveStorePolicy(idKind, repo.StoreForKind(idKind).Dir)
+		if cfgErr != nil {
+			writeEnvelope(stdout, configErrorForCommand(command, cfgErr), opts.Format)
+			return exitState
+		}
+		cfg = resolution.Effective
+		single, found := validateSingle(repo, *id, cfg)
 		if !found {
 			writeEnvelope(stdout, errorEnvelope(command, "document_not_found", "state", fmt.Sprintf("no parseable document with id %s", strings.ToUpper(strings.TrimSpace(*id))), "Run `canon list` to inspect known ids, or `canon validate` to find malformed files."), opts.Format)
 			return exitNotFound
 		}
 		result = single
 	} else {
-		result = validateCorpus(repo, kind)
+		var resolution ConfigResolution
+		var cfgErr *ConfigError
+		if kind != "" {
+			resolution, cfgErr = resolveStorePolicy(kind, repo.StoreForKind(kind).Dir)
+		} else {
+			resolution, cfgErr = resolveRepoPolicy(repo)
+		}
+		if cfgErr != nil {
+			writeEnvelope(stdout, configErrorForCommand(command, cfgErr), opts.Format)
+			return exitState
+		}
+		cfg = resolution.Effective
+		result = validateCorpus(repo, kind, cfg)
 	}
 	status := "ok"
 	if result.Summary.Errors > 0 {
@@ -308,7 +331,11 @@ func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args [
 		},
 		NextActions: nextActions,
 	}, opts.Format)
-	if result.Summary.Errors > 0 || (*strict && result.Summary.Warnings > 0) {
+	// Strictness combines the invocation flag with repository policy by
+	// logical OR (ADR-0016): no flag weakens a strict corpus. Severities and
+	// envelope status stay unchanged; only the exit code is affected.
+	strictMode := *strict || cfg.StrictValidation()
+	if result.Summary.Errors > 0 || (strictMode && result.Summary.Warnings > 0) {
 		return exitState
 	}
 	return exitOK
@@ -317,8 +344,15 @@ func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args [
 // runDoctor reports repository readiness using the shared validation engine
 // in shallow mode (ADR-0009): directory existence and parseability only,
 // plus the domain-model integrity checks that are part of doctor's contract.
+// The effective configuration decides which kinds are required (ADR-0016).
 func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
-	checks, failedKind, readErr := shallowDiagnostics(repo)
+	resolution, cfgErr := resolveRepoPolicy(repo)
+	if cfgErr != nil {
+		writeEnvelope(stdout, configErrorForCommand("doctor", cfgErr), opts.Format)
+		return exitState
+	}
+	cfg := resolution.Effective
+	checks, failedKind, readErr := shallowDiagnostics(repo, cfg)
 	if readErr != nil {
 		env := errorEnvelope("doctor", failedKind+"_read_failed", "io", fmt.Sprintf("failed to read %s directory", failedKind), "Check file permissions and front matter.")
 		env.Error.Diagnostics = checks
@@ -337,14 +371,10 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 	}
 	if anyWarning {
 		writeEnvelope(stdout, Envelope{
-			Command: "doctor",
-			Status:  "warning",
-			Data:    map[string]any{"diagnostics": checks},
-			NextActions: []NextAction{
-				{Command: "canon adr init --dry-run", Description: "Preview creating the ADR directory.", Safety: "preview"},
-				{Command: "canon spec init --dry-run", Description: "Preview creating the SPEC directory.", Safety: "preview"},
-				{Command: "canon domain init --dry-run", Description: "Preview creating the domain directory.", Safety: "preview"},
-			},
+			Command:     "doctor",
+			Status:      "warning",
+			Data:        map[string]any{"diagnostics": checks},
+			NextActions: doctorRemediationActions(repo, cfg),
 		}, opts.Format)
 		return exitOK
 	}
@@ -359,6 +389,35 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		},
 	}, opts.Format)
 	return exitOK
+}
+
+// doctorRemediationActions builds next actions from the actual missing
+// required stores rather than always listing all three init previews. When
+// the warning comes from content checks instead of missing storage, the next
+// step is the deep validation report.
+func doctorRemediationActions(repo Repo, cfg EffectiveConfig) []NextAction {
+	actions := []NextAction{}
+	for _, kind := range supportedKinds {
+		if !cfg.KindRequired(kind) || repo.StoreForKind(kind).Exists() {
+			continue
+		}
+		actions = append(actions, NextAction{Command: fmt.Sprintf("canon %s init --dry-run", kind), Description: fmt.Sprintf("Preview creating the %s directory.", kindDirectoryLabel(kind)), Safety: "preview"})
+	}
+	if len(actions) == 0 {
+		actions = append(actions, NextAction{Command: "canon validate", Description: "Inspect the corpus integrity findings behind this warning.", Safety: "read-only"})
+	}
+	return actions
+}
+
+func kindDirectoryLabel(kind string) string {
+	switch kind {
+	case KindSPEC:
+		return "SPEC"
+	case KindDomain:
+		return "domain"
+	default:
+		return "ADR"
+	}
 }
 
 var (
@@ -534,6 +593,24 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 		return exitUsage
 	}
 	store := repo.StoreForKind(kind)
+	// Repository policy gates run before number allocation or any filesystem
+	// access, so dry-run and apply are rejected identically (ADR-0016).
+	resolution, cfgErr := resolveStorePolicy(kind, store.Dir)
+	if cfgErr != nil {
+		writeEnvelope(stdout, configErrorForCommand(command, cfgErr), opts.Format)
+		return exitState
+	}
+	cfg := resolution.Effective
+	if cfg.ProposedCreationRequired() && statusValue != "proposed" {
+		writeEnvelope(stdout, errorEnvelope(command, "initial_status_restricted", "config", fmt.Sprintf("%s requires new documents to start as proposed, but status %q was requested", configSourceLabel(cfg), statusValue), fmt.Sprintf("Retry with --status proposed, or change conventions.lifecycle.new_documents_must_be_proposed in %s.", configSourceLabel(cfg))), opts.Format)
+		return exitState
+	}
+	if allowed, restricted := cfg.AllowedTags(kind); restricted {
+		if offending := tagsOutsideAllowed(parseList(*tags), allowed); len(offending) > 0 {
+			writeEnvelope(stdout, errorEnvelope(command, "disallowed_tag", "config", fmt.Sprintf("tags outside the %s vocabulary from %s: %s (allowed: %s)", kind, configSourceLabel(cfg), strings.Join(offending, ", "), allowedTagsDisplay(allowed)), fmt.Sprintf("Remove the disallowed tags, or add them to conventions.tags.%s.allowed in %s.", kind, configSourceLabel(cfg))), opts.Format)
+			return exitState
+		}
+	}
 	next, err := store.NextNumber()
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope(command, "next_number_failed", "io", err.Error(), "Run `canon doctor` for diagnostics."), opts.Format)
@@ -688,12 +765,19 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 		writeEnvelope(stdout, errorEnvelope("show", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
+	// Configuration must resolve before show can decide which follow-up
+	// mutations are legal; an unreadable policy is an error, not a default.
+	resolution, cfgErr := resolveStorePolicy(store.Kind, store.Dir)
+	if cfgErr != nil {
+		writeEnvelope(stdout, configErrorForCommand("show", cfgErr), opts.Format)
+		return exitState
+	}
 	adr, err := store.Read(*id)
 	if err != nil {
 		return handleReadError(stdout, opts, "show", err)
 	}
 	nextActions := []NextAction{}
-	if cfg, _, cfgErr := LoadConfig(store.Dir); cfgErr != nil || cfg.AppendEnabled() {
+	if resolution.Effective.AppendEnabled() {
 		nextActions = append(nextActions, NextAction{Command: fmt.Sprintf("canon append --id %s --title Note --body \"...\"", adr.ID), Description: "Add an appendix.", Safety: "write"})
 	}
 	writeEnvelope(stdout, Envelope{
@@ -753,6 +837,23 @@ func docsForKind(repo Repo, kind string) ([]ADR, error) {
 	return store.List()
 }
 
+// enforceReasonPolicy resolves the store's repository policy and applies the
+// configured lifecycle reason gate before any read or mutation. It writes
+// the error envelope and returns false when the command must stop.
+func enforceReasonPolicy(stdout io.Writer, opts GlobalOptions, command string, store Store, reason string) bool {
+	resolution, cfgErr := resolveStorePolicy(store.Kind, store.Dir)
+	if cfgErr != nil {
+		writeEnvelope(stdout, configErrorForCommand(command, cfgErr), opts.Format)
+		return false
+	}
+	cfg := resolution.Effective
+	if cfg.ReasonRequired() && strings.TrimSpace(reason) == "" {
+		writeEnvelope(stdout, errorEnvelope(command, "reason_required_by_config", "config", fmt.Sprintf("%s requires a reason for lifecycle transitions, but --reason was blank", configSourceLabel(cfg)), fmt.Sprintf("Retry with --reason, or change conventions.lifecycle.require_reason in %s.", configSourceLabel(cfg))), opts.Format)
+		return false
+	}
+	return true
+}
+
 func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, command, status, historyTitle string) int {
 	fs := newCommandFlagSet(stderr, command)
 	id := fs.String("id", "", fmt.Sprintf("document id to %s", command))
@@ -772,6 +873,9 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope(command, "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
+	}
+	if !enforceReasonPolicy(stdout, opts, command, store, *reason) {
+		return exitState
 	}
 	adr, err := store.Read(*id)
 	if err != nil {
@@ -818,6 +922,9 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	if err != nil {
 		writeEnvelope(stdout, errorEnvelope("supersede", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
+	}
+	if !enforceReasonPolicy(stdout, opts, "supersede", store, *reason) {
+		return exitState
 	}
 	adr, err := store.Read(*id)
 	if err != nil {
@@ -901,6 +1008,9 @@ func runDeprecate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		writeEnvelope(stdout, errorEnvelope("deprecate", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
+	if !enforceReasonPolicy(stdout, opts, "deprecate", store, *reason) {
+		return exitState
+	}
 	adr, err := store.Read(*id)
 	if err != nil {
 		return handleReadError(stdout, opts, "deprecate", err)
@@ -948,13 +1058,13 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 		writeEnvelope(stdout, errorEnvelope("append", "invalid_id", "usage", err.Error(), "Use an id like ADR-0001, SPEC-0001, or DM-0001."), opts.Format)
 		return exitUsage
 	}
-	cfg, cfgPath, err := LoadConfig(store.Dir)
-	if err != nil {
-		writeEnvelope(stdout, errorEnvelope("append", "invalid_config", "config", err.Error(), fmt.Sprintf("Fix or remove %s.", cfgPath)), opts.Format)
+	resolution, cfgErr := resolveStorePolicy(store.Kind, store.Dir)
+	if cfgErr != nil {
+		writeEnvelope(stdout, configErrorForCommand("append", cfgErr), opts.Format)
 		return exitState
 	}
-	if !cfg.AppendEnabled() {
-		writeEnvelope(stdout, errorEnvelope("append", "append_disabled", "config", fmt.Sprintf("the append command is disabled by %s", cfgPath), "Edit the document file directly; git tracks the history."), opts.Format)
+	if !resolution.Effective.AppendEnabled() {
+		writeEnvelope(stdout, errorEnvelope("append", "append_disabled", "config", fmt.Sprintf("the append command is disabled by %s", configSourceLabel(resolution.Effective)), "Edit the document file directly; git tracks the history."), opts.Format)
 		return exitState
 	}
 	adr, err := store.Read(*id)

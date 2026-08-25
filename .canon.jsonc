@@ -1,8 +1,49 @@
 {
-	// This corpus does not use `canon append`. Edit document files directly;
-	// git history is the record of change. See ADR-0015.
+	// Repository policy for this corpus, per ADR-0016. The policy is an
+	// enforcement floor: no CLI flag weakens these settings.
 	"schema_version": "canon.v1",
 	"conventions": {
-		"append": false
+		// This corpus does not use `canon append`. Edit document files
+		// directly; git history is the record of change.
+		"append": false,
+		// This repository intentionally has no SPECs: behavioral guarantees
+		// live in the test suite. ADR and Domain stores are required.
+		"required_kinds": ["adr", "domain"],
+		"validation": {
+			// Warning findings fail `canon validate` with exit 4.
+			"strict": true
+		},
+		"lifecycle": {
+			// accept, reject, supersede, and deprecate need --reason.
+			"require_reason": true,
+			// New documents start as proposed and move forward explicitly.
+			"new_documents_must_be_proposed": true
+		},
+		"tags": {
+			"adr": {
+				"allowed": [
+					"adr",
+					"agents",
+					"cli",
+					"config",
+					"context",
+					"domain",
+					"go",
+					"integrations",
+					"kinds",
+					"lifecycle",
+					"output",
+					"platforms",
+					"rename",
+					"skill",
+					"spec",
+					"support",
+					"validation"
+				]
+			},
+			"domain": {
+				"allowed": ["glossary", "process"]
+			}
+		}
 	}
 }

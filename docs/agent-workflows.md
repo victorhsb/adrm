@@ -21,6 +21,35 @@ interactive prompts.
    references, reciprocity, metadata validity), run `canon validate`. `doctor`
    answers "can I work here?"; `validate` answers "is my corpus healthy?"
 
+3. Inspect repository policy.
+
+   ```sh
+   canon config show
+   ```
+
+   The effective configuration tells you which kinds are required (a kind that
+   is not required may be absent without weakening readiness, but still works
+   when present), whether lifecycle transitions need `--reason`, whether new
+   documents must start as `proposed`, and which tag vocabularies each kind
+   allows. Errors with category `config` (`reason_required_by_config`,
+   `initial_status_restricted`, `disallowed_tag`, `invalid_config`,
+   `config_scope_mismatch`) mean repository policy was enforced, not that the
+   command was wrong: adjust the call to satisfy the policy, and never retry
+   in a loop. Run `canon config validate` when configuration itself looks
+   broken.
+
+4. Query before mutating.
+
+   ```sh
+   canon list
+   canon search --query "storage"
+   canon show --id ADR-0001
+   ```
+
+   Always provide reasons, statuses, and tags that satisfy the policy you
+   inspected: pass `--reason` on lifecycle commands, create documents as
+   `proposed`, and pick tags from the kind's allowed vocabulary.
+
 3. Query before mutating.
 
    ```sh
@@ -29,20 +58,20 @@ interactive prompts.
    canon show --id ADR-0001
    ```
 
-4. Apply mutations. Single-document mutations are reversible via git, so run
+5. Apply mutations. Single-document mutations are reversible via git, so run
    them directly; `--dry-run` is optional for these.
 
    ```sh
    canon append --id ADR-0001 --title "Review" --body "Still valid."
    ```
 
-5. Verify the result.
+6. Verify the result.
 
    ```sh
    canon show --id ADR-0001
    ```
 
-6. After mutations, confirm corpus health.
+7. After mutations, confirm corpus health.
 
    ```sh
    canon validate
@@ -133,7 +162,8 @@ concept as a tombstone. See `docs/domain-format.md` for the full format.
 ## Accepting a decision
 
 Use `accept` to record that a proposed ADR, SPEC, or domain entry has been
-approved.
+approved. Some repositories require a reason by policy; passing one always
+works, so make it a habit.
 
 ```sh
 canon show --id ADR-0001
@@ -257,6 +287,13 @@ Prefer the suggested fix over guessing. For state-related failures, run:
 
 ```sh
 canon doctor
+```
+
+For `config`-category failures, inspect the effective policy before retrying:
+
+```sh
+canon config show
+canon config validate
 ```
 
 ## Output hygiene

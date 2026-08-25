@@ -1342,10 +1342,12 @@ func TestAcceptMutatesSpec(t *testing.T) {
 func TestDoctorReportsMissingSpecDirectory(t *testing.T) {
 	adr := filepath.Join(t.TempDir(), "adr")
 	spec := filepath.Join(t.TempDir(), "spec")
-	if code, _ := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "adr", "init"); code != exitOK {
+	domain := filepath.Join(t.TempDir(), "domain")
+	dirs := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "adr", "init")...); code != exitOK {
 		t.Fatalf("init code = %d", code)
 	}
-	code, env := runKindTest(t, "--adr-dir", adr, "--spec-dir", spec, "doctor")
+	code, env := runKindTest(t, append(dirs, "doctor")...)
 	if code != exitOK {
 		t.Fatalf("doctor code = %d", code)
 	}
@@ -1578,13 +1580,14 @@ func TestDoctorReportsMissingDomainDirectory(t *testing.T) {
 
 func TestDoctorFlagsDuplicateAcceptedDomainTitles(t *testing.T) {
 	domain := filepath.Join(t.TempDir(), "domain")
-	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Order", "--status", "accepted"); code != exitOK {
+	dirs := []string{"--adr-dir", filepath.Join(t.TempDir(), "adr"), "--spec-dir", filepath.Join(t.TempDir(), "spec"), "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Order", "--status", "accepted")...); code != exitOK {
 		t.Fatalf("first new code = %d", code)
 	}
-	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Order", "--status", "accepted"); code != exitOK {
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Order", "--status", "accepted")...); code != exitOK {
 		t.Fatalf("second new code = %d", code)
 	}
-	code, env := runKindTest(t, "--domain-dir", domain, "doctor")
+	code, env := runKindTest(t, append(dirs, "doctor")...)
 	if code != exitOK {
 		t.Fatalf("doctor code = %d", code)
 	}
@@ -1605,10 +1608,10 @@ func TestDoctorFlagsDuplicateAcceptedDomainTitles(t *testing.T) {
 	}
 
 	// A single accepted entry for the title clears the finding.
-	if code, _ := runKindTest(t, "--domain-dir", domain, "deprecate", "--id", "DM-0002", "--reason", "Duplicate of DM-0001."); code != exitOK {
+	if code, _ := runKindTest(t, append(dirs, "deprecate", "--id", "DM-0002", "--reason", "Duplicate of DM-0001.")...); code != exitOK {
 		t.Fatalf("deprecate code = %d", code)
 	}
-	code, env = runKindTest(t, "--domain-dir", domain, "doctor")
+	code, env = runKindTest(t, append(dirs, "doctor")...)
 	if code != exitOK {
 		t.Fatalf("doctor code = %d", code)
 	}
@@ -1621,15 +1624,16 @@ func TestDoctorFlagsDuplicateAcceptedDomainTitles(t *testing.T) {
 
 func TestDoctorFlagsDeadDomainReferences(t *testing.T) {
 	domain := filepath.Join(t.TempDir(), "domain")
-	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Session"); code != exitOK {
+	dirs := []string{"--adr-dir", filepath.Join(t.TempDir(), "adr"), "--spec-dir", filepath.Join(t.TempDir(), "spec"), "--domain-dir", domain}
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Session")...); code != exitOK {
 		t.Fatalf("first new code = %d", code)
 	}
-	if code, _ := runKindTest(t, "--domain-dir", domain, "domain", "new", "--title", "Connection", "--relationships", "Replaces [Session](0001-session.md)."); code != exitOK {
+	if code, _ := runKindTest(t, append(dirs, "domain", "new", "--title", "Connection", "--relationships", "Replaces [Session](0001-session.md).")...); code != exitOK {
 		t.Fatalf("second new code = %d", code)
 	}
 
 	// While DM-0001 is live, references to it are healthy.
-	code, env := runKindTest(t, "--domain-dir", domain, "doctor")
+	code, env := runKindTest(t, append(dirs, "doctor")...)
 	if code != exitOK {
 		t.Fatalf("doctor code = %d", code)
 	}
@@ -1639,10 +1643,10 @@ func TestDoctorFlagsDeadDomainReferences(t *testing.T) {
 		}
 	}
 
-	if code, _ := runKindTest(t, "--domain-dir", domain, "supersede", "--id", "DM-0001", "--by", "DM-0002", "--reason", "Redefined."); code != exitOK {
+	if code, _ := runKindTest(t, append(dirs, "supersede", "--id", "DM-0001", "--by", "DM-0002", "--reason", "Redefined.")...); code != exitOK {
 		t.Fatalf("supersede code = %d", code)
 	}
-	code, env = runKindTest(t, "--domain-dir", domain, "doctor")
+	code, env = runKindTest(t, append(dirs, "doctor")...)
 	if code != exitOK {
 		t.Fatalf("doctor code = %d", code)
 	}

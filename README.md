@@ -24,6 +24,8 @@ The initial command surface is intentionally agent-centric:
 - `--dry-run` on every mutating command.
 - Structured errors with codes, categories, and suggested fixes.
 - Stable ADR ids like `ADR-0001` for command composition.
+- `canon config show` and `canon config validate` to inspect and validate the
+  repository policy declared in `.canon.jsonc`.
 - `canon skill` plus `canon skill install/update` to publish a repository-local
   bundle of agent skills, supporting files, and target-specific subagents.
 
@@ -93,6 +95,7 @@ canon --adr-dir architecture/decisions list
 ## Documentation
 
 - [Command reference](docs/commands.md)
+- [Configuration](docs/config.md)
 - [ADR file format](docs/adr-format.md)
 - [SPEC file format](docs/spec-format.md)
 - [Domain entry file format](docs/domain-format.md)

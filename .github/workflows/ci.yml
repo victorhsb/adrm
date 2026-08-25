@@ -63,6 +63,12 @@ jobs:
           go run ./cmd/canon commands > /dev/null
           go run ./cmd/canon doctor > /dev/null
 
+      - name: Config smoke
+        shell: bash
+        run: |
+          go run ./cmd/canon config show > /dev/null
+          go run ./cmd/canon config validate > /dev/null
+
       - name: Dry-run mutation smoke
         shell: bash
         run: |
