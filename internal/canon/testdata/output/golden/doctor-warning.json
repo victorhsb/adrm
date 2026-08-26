@@ -1,0 +1,42 @@
+{
+  "schema_version": "canon.v1",
+  "command": "doctor",
+  "status": "warning",
+  "data": {
+    "diagnostics": [
+      {
+        "name": "adr_directory",
+        "status": "ok",
+        "message": "t-adr exists"
+      },
+      {
+        "name": "adr_parse",
+        "status": "ok",
+        "message": "1 adr files parsed"
+      },
+      {
+        "name": "spec_directory",
+        "status": "warning",
+        "message": "t-spec does not exist",
+        "suggested_fix": "Run `canon spec init --dry-run`, then `canon spec init`."
+      },
+      {
+        "name": "domain_directory",
+        "status": "ok",
+        "message": "t-domain exists"
+      },
+      {
+        "name": "domain_parse",
+        "status": "ok",
+        "message": "1 domain files parsed"
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon spec init --dry-run",
+      "description": "Preview creating the SPEC directory.",
+      "safety": "preview"
+    }
+  ]
+}

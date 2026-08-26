@@ -1,0 +1,30 @@
+{
+  "schema_version": "canon.v1",
+  "command": "domain search",
+  "status": "ok",
+  "data": {
+    "count": 1,
+    "query": "commitment",
+    "results": [
+      {
+        "adr": {
+          "kind": "domain",
+          "id": "DM-0001",
+          "number": 1,
+          "title": "Decision Record",
+          "status": "proposed",
+          "date": "2025-01-08",
+          "path": "t-domain/0001-decision-record.md"
+        },
+        "snippet": "ecord ## Status proposed ## Definition A dated architecture commitment. ## Avoid TBD ## Relationships TBD"
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon show --id ADR-0001",
+      "description": "Inspect a selected result id.",
+      "safety": "read-only"
+    }
+  ]
+}

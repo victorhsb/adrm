@@ -1,0 +1,68 @@
+{
+  "schema_version": "canon.v1",
+  "command": "skill update",
+  "status": "planned",
+  "data": {
+    "assets": [
+      {
+        "hash": "sha256:84d89d7069870434dd899e0b585c2f8115406606b126eda469939477816e3e94",
+        "kind": "skill",
+        "name": "canon",
+        "target_paths": [
+          "t-skills/canon/SKILL.md"
+        ],
+        "version": "12"
+      },
+      {
+        "hash": "sha256:9ab55e38423b84c968ab22f9e05a7d2052c8ffe2d751a9ee8ccddc17b18c18ed",
+        "kind": "skill",
+        "name": "canon-record-gate",
+        "target_paths": [
+          ".claude/agents/canon-critic.md",
+          "t-skills/canon-record-gate/SKILL.md",
+          "t-skills/canon-record-gate/references/boundary-examples.md"
+        ],
+        "version": "3"
+      }
+    ],
+    "plan": {
+      "dry_run": true,
+      "changes_made": false,
+      "operations": [
+        {
+          "action": "noop",
+          "path": ".claude/agents/canon-critic.md",
+          "description": "Managed bundle file is current."
+        },
+        {
+          "action": "noop",
+          "path": "t-skills/canon-record-gate/SKILL.md",
+          "description": "Managed bundle file is current."
+        },
+        {
+          "action": "noop",
+          "path": "t-skills/canon-record-gate/references/boundary-examples.md",
+          "description": "Managed bundle file is current."
+        },
+        {
+          "action": "noop",
+          "path": "t-skills/canon/SKILL.md",
+          "description": "Managed bundle file is current."
+        }
+      ]
+    },
+    "targets": [
+      "claude"
+    ]
+  },
+  "warnings": [
+    "No changes were made."
+  ],
+  "next_actions": [
+    {
+      "command": "canon skill update --skill-dir \"t-skills\" --agent \"claude\"",
+      "description": "Apply this previewed skill mutation.",
+      "safety": "write"
+    }
+  ]
+}

@@ -23,8 +23,10 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 
 - `cmd/canon`: CLI entrypoint.
 - `internal/canon`: command handling (`cli.go`, `config_command.go`), storage
-  (`store.go`), configuration (`config.go`), output envelopes, command
-  registry, and tests.
+  (`store.go`), configuration (`config.go`), output rendering (`output.go`
+  format renderers plus typed payloads in `payloads.go`), command registry,
+  and tests. JSON output fixtures live in `internal/canon/testdata/output`
+  alongside the golden corpus.
 - `skill`: bundled agent skill and subagent source payloads under
   `skill/assets`, embedded and rendered by `skill.go` with per-asset versions,
   per-file hashes, and install/update helpers.

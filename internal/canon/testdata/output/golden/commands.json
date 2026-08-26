@@ -1,0 +1,590 @@
+{
+  "schema_version": "canon.v1",
+  "command": "commands",
+  "status": "ok",
+  "data": {
+    "commands": [
+      {
+        "name": "commands",
+        "purpose": "Return the machine-readable command registry with safety and composition metadata.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon commands"
+        ]
+      },
+      {
+        "name": "version",
+        "purpose": "Print the canon build version.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon version"
+        ]
+      },
+      {
+        "name": "doctor",
+        "purpose": "Check whether required ADR, SPEC, and domain storage is present and parseable, and flag domain-model integrity problems (duplicate accepted titles, references to superseded or deprecated entries). Required kinds come from repository configuration; absent optional stores are healthy.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon doctor"
+        ]
+      },
+      {
+        "name": "validate",
+        "purpose": "Run the full corpus integrity check catalog: malformed files, duplicate ids, broken references, reciprocity, status and date validity, kind/id/directory coherence, and configured tag vocabularies. Never mutates; exit 4 on errors, or on warnings with --strict or configured strictness.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--id",
+          "--strict"
+        ],
+        "examples": [
+          "canon validate",
+          "canon validate --strict",
+          "canon validate --id ADR-0001"
+        ],
+        "next_commands": [
+          "canon doctor",
+          "canon show --id ADR-0001"
+        ]
+      },
+      {
+        "name": "adr validate",
+        "purpose": "Run the corpus integrity checks scoped to the ADR directory.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--strict"
+        ],
+        "examples": [
+          "canon adr validate"
+        ],
+        "next_commands": [
+          "canon validate"
+        ]
+      },
+      {
+        "name": "spec validate",
+        "purpose": "Run the corpus integrity checks scoped to the SPEC directory.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--strict"
+        ],
+        "examples": [
+          "canon spec validate"
+        ],
+        "next_commands": [
+          "canon validate"
+        ]
+      },
+      {
+        "name": "domain validate",
+        "purpose": "Run the corpus integrity checks scoped to the domain entry directory.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--strict"
+        ],
+        "examples": [
+          "canon domain validate"
+        ],
+        "next_commands": [
+          "canon validate"
+        ]
+      },
+      {
+        "name": "config show",
+        "purpose": "Show the effective repository configuration resolved from .canon.jsonc (or the defaults), including discovery paths, recognized keys, and ignored unknown keys.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon config show",
+          "canon --format text config show"
+        ],
+        "next_commands": [
+          "canon config validate",
+          "canon doctor"
+        ]
+      },
+      {
+        "name": "config validate",
+        "purpose": "Validate .canon.jsonc against the configuration schema: malformed files, unsupported schema versions, invalid values, and scope mismatches are errors; unknown keys are warnings that never fail the command. Exit 4 on errors.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon config validate"
+        ],
+        "next_commands": [
+          "canon config show",
+          "canon validate"
+        ]
+      },
+      {
+        "name": "adr init",
+        "purpose": "Create the ADR directory if it does not exist.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates directory only",
+        "examples": [
+          "canon adr init --dry-run",
+          "canon adr init"
+        ]
+      },
+      {
+        "name": "spec init",
+        "purpose": "Create the SPEC directory if it does not exist.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates directory only",
+        "examples": [
+          "canon spec init --dry-run",
+          "canon spec init"
+        ]
+      },
+      {
+        "name": "domain init",
+        "purpose": "Create the domain entry directory if it does not exist.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates directory only",
+        "examples": [
+          "canon domain init --dry-run",
+          "canon domain init"
+        ]
+      },
+      {
+        "name": "adr new",
+        "purpose": "Create a new ADR markdown file with parseable metadata. ADRs capture architecture decisions.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates one markdown file",
+        "selectors": [
+          "--title",
+          "--status",
+          "--tags"
+        ],
+        "examples": [
+          "canon adr new --title \"Use SQLite for local index\" --status proposed --dry-run",
+          "canon adr new --title \"Use SQLite for local index\" --context \"Need local querying\" --decision \"Use SQLite\""
+        ],
+        "next_commands": [
+          "canon adr list",
+          "canon show --id ADR-0001"
+        ]
+      },
+      {
+        "name": "spec new",
+        "purpose": "Create a new SPEC markdown file with parseable metadata. SPECs capture functional requirements.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates one markdown file",
+        "selectors": [
+          "--title",
+          "--status",
+          "--tags"
+        ],
+        "examples": [
+          "canon spec new --title \"Local query index\" --requirements \"Return ADRs by tag.\" --acceptance \"list --tag storage works.\" --dry-run"
+        ],
+        "next_commands": [
+          "canon spec list",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "domain new",
+        "purpose": "Create a new domain entry markdown file with parseable metadata. Domain entries define one canonical concept each: its definition, avoided terms with reasons, and relationships.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates one markdown file",
+        "selectors": [
+          "--title",
+          "--status",
+          "--tags",
+          "--definition",
+          "--avoid",
+          "--relationships"
+        ],
+        "examples": [
+          "canon domain new --title \"ADR\" --definition \"A dated, narrowly-scoped architecture commitment.\" --avoid \"design doc: too broad; ticket: tracks work, not decisions\" --dry-run"
+        ],
+        "next_commands": [
+          "canon domain list",
+          "canon show --id DM-0001"
+        ]
+      },
+      {
+        "name": "list",
+        "purpose": "List ADR, SPEC, and domain entry summaries together in deterministic order.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon list",
+          "canon list --status accepted",
+          "canon --format context list --status accepted"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001",
+          "canon show --id DM-0001",
+          "canon search --query text"
+        ]
+      },
+      {
+        "name": "adr list",
+        "purpose": "List ADR summaries in deterministic order.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon adr list",
+          "canon adr list --status accepted",
+          "canon --format context adr list --status accepted"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon adr search --query text"
+        ]
+      },
+      {
+        "name": "spec list",
+        "purpose": "List SPEC summaries in deterministic order.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon spec list",
+          "canon spec list --tag storage",
+          "canon --format context spec list --status accepted"
+        ],
+        "next_commands": [
+          "canon show --id SPEC-0001",
+          "canon spec search --query text"
+        ]
+      },
+      {
+        "name": "domain list",
+        "purpose": "List domain entry summaries in deterministic order.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon domain list",
+          "canon domain list --status accepted",
+          "canon --format context domain list --status accepted"
+        ],
+        "next_commands": [
+          "canon show --id DM-0001",
+          "canon domain search --query text"
+        ]
+      },
+      {
+        "name": "show",
+        "purpose": "Return one ADR, SPEC, or domain entry with metadata and content.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--id"
+        ],
+        "examples": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001",
+          "canon show --id DM-0001"
+        ],
+        "next_commands": [
+          "canon append --id ADR-0001 --title Note --body ...",
+          "canon append --id SPEC-0001 --title Note --body ..."
+        ]
+      },
+      {
+        "name": "search",
+        "purpose": "Search title, tags, status, kind, and markdown body across ADRs, SPECs, and domain entries.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--query",
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon search --query \"database\"",
+          "canon search --status deprecated"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "adr search",
+        "purpose": "Search title, tags, status, and markdown body across ADRs only.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--query",
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon adr search --query \"database\""
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001"
+        ]
+      },
+      {
+        "name": "spec search",
+        "purpose": "Search title, tags, status, and markdown body across SPECs only.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--query",
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon spec search --query requirements"
+        ],
+        "next_commands": [
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "domain search",
+        "purpose": "Search title, tags, status, and markdown body across domain entries only.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "selectors": [
+          "--query",
+          "--status",
+          "--tag"
+        ],
+        "examples": [
+          "canon domain search --query \"cancellation\""
+        ],
+        "next_commands": [
+          "canon show --id DM-0001"
+        ]
+      },
+      {
+        "name": "accept",
+        "purpose": "Mark an ADR, SPEC, or domain entry as accepted.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: updates one document metadata block and appends history",
+        "selectors": [
+          "--id",
+          "--reason"
+        ],
+        "examples": [
+          "canon accept --id ADR-0001 --reason \"Approved by the team.\" --dry-run",
+          "canon accept --id SPEC-0001 --reason \"Requirements approved.\" --dry-run"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "reject",
+        "purpose": "Mark an ADR, SPEC, or domain entry as rejected.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: updates one document metadata block and appends history",
+        "selectors": [
+          "--id",
+          "--reason"
+        ],
+        "examples": [
+          "canon reject --id ADR-0001 --reason \"Chose a different approach.\" --dry-run",
+          "canon reject --id SPEC-0001 --reason \"Requirements changed.\" --dry-run"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "supersede",
+        "purpose": "Mark an ADR, SPEC, or domain entry as superseded by another document of the same kind.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: updates two document metadata blocks and appends history",
+        "selectors": [
+          "--id",
+          "--by",
+          "--reason"
+        ],
+        "examples": [
+          "canon supersede --id ADR-0001 --by ADR-0002 --reason \"Replaced by current architecture\" --dry-run",
+          "canon supersede --id SPEC-0001 --by SPEC-0002 --reason \"Requirements split.\" --dry-run"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "deprecate",
+        "purpose": "Mark an ADR, SPEC, or domain entry as deprecated without a direct replacement.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: updates one document metadata block and appends history",
+        "selectors": [
+          "--id",
+          "--reason"
+        ],
+        "examples": [
+          "canon deprecate --id ADR-0001 --reason \"No longer used\" --dry-run",
+          "canon deprecate --id SPEC-0001 --reason \"Requirements moved.\" --dry-run"
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "append",
+        "purpose": "Append a dated appendix section to an ADR, SPEC, or domain entry. Disabled when .canon.jsonc sets conventions.append to false.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: appends markdown to one document",
+        "selectors": [
+          "--id",
+          "--title",
+          "--body"
+        ],
+        "examples": [
+          "canon append --id ADR-0001 --title \"2026 review\" --body \"Still valid.\"",
+          "canon append --id SPEC-0001 --title Review --body \"Requirements still apply.\""
+        ],
+        "next_commands": [
+          "canon show --id ADR-0001",
+          "canon show --id SPEC-0001"
+        ]
+      },
+      {
+        "name": "skill",
+        "purpose": "Return the bundled skill asset catalog with names, kinds, versions, hashes, and target paths.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon skill"
+        ]
+      },
+      {
+        "name": "skill install",
+        "purpose": "Install all bundled skill assets and selected subagent components into a repository.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: creates skill payload files and target-specific agent files",
+        "selectors": [
+          "--skill-dir",
+          "--only",
+          "--agent"
+        ],
+        "examples": [
+          "canon skill install --dry-run",
+          "canon skill install",
+          "canon skill install --only canon --dry-run",
+          "canon skill install --agent claude --dry-run"
+        ],
+        "next_commands": [
+          "canon skill update --dry-run",
+          "canon commands"
+        ]
+      },
+      {
+        "name": "skill update",
+        "purpose": "Refresh every installed managed bundle file, refusing local modifications unless forced.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: updates managed skill payload files and target-specific agent files",
+        "selectors": [
+          "--skill-dir",
+          "--only",
+          "--agent",
+          "--force"
+        ],
+        "examples": [
+          "canon skill update --dry-run",
+          "canon skill update",
+          "canon skill update --only canon-record-gate --dry-run",
+          "canon skill update --force --dry-run"
+        ],
+        "next_commands": [
+          "canon commands"
+        ]
+      }
+    ],
+    "global_flags": [
+      {
+        "default": "docs/adr",
+        "name": "--adr-dir",
+        "purpose": "Select ADR storage directory."
+      },
+      {
+        "default": "docs/spec",
+        "name": "--spec-dir",
+        "purpose": "Select SPEC storage directory."
+      },
+      {
+        "default": "docs/domain",
+        "name": "--domain-dir",
+        "purpose": "Select domain entry storage directory."
+      },
+      {
+        "default": "json",
+        "name": "--format",
+        "purpose": "Choose json, text, or list-only context output."
+      },
+      {
+        "default": "false",
+        "name": "-t",
+        "purpose": "Shorthand for --format text."
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon doctor",
+      "description": "Check if the ADR, SPEC, and domain directories are ready.",
+      "safety": "read-only"
+    }
+  ]
+}

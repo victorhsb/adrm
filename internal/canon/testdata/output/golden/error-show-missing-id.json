@@ -1,0 +1,11 @@
+{
+  "schema_version": "canon.v1",
+  "command": "show",
+  "status": "error",
+  "error": {
+    "code": "missing_id",
+    "category": "usage",
+    "message": "--id is required",
+    "suggested_fix": "Use an id from `canon list`."
+  }
+}

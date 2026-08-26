@@ -1,0 +1,61 @@
+{
+  "schema_version": "canon.v1",
+  "command": "doctor",
+  "status": "ok",
+  "data": {
+    "diagnostics": [
+      {
+        "name": "adr_directory",
+        "status": "ok",
+        "message": "t-adr exists"
+      },
+      {
+        "name": "adr_parse",
+        "status": "ok",
+        "message": "1 adr files parsed"
+      },
+      {
+        "name": "spec_directory",
+        "status": "ok",
+        "message": "t-spec exists"
+      },
+      {
+        "name": "spec_parse",
+        "status": "ok",
+        "message": "1 spec files parsed"
+      },
+      {
+        "name": "domain_directory",
+        "status": "ok",
+        "message": "t-domain exists"
+      },
+      {
+        "name": "domain_parse",
+        "status": "ok",
+        "message": "1 domain files parsed"
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon list",
+      "description": "Inspect ADR, SPEC, and domain entry inventory.",
+      "safety": "read-only"
+    },
+    {
+      "command": "canon adr new --title \"...\" --dry-run",
+      "description": "Preview creating a new ADR.",
+      "safety": "preview"
+    },
+    {
+      "command": "canon spec new --title \"...\" --dry-run",
+      "description": "Preview creating a new SPEC.",
+      "safety": "preview"
+    },
+    {
+      "command": "canon domain new --title \"...\" --dry-run",
+      "description": "Preview creating a new domain entry.",
+      "safety": "preview"
+    }
+  ]
+}

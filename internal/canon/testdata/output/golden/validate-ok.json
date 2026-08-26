@@ -1,0 +1,20 @@
+{
+  "schema_version": "canon.v1",
+  "command": "validate",
+  "status": "ok",
+  "data": {
+    "findings": [],
+    "summary": {
+      "files_checked": 3,
+      "errors": 0,
+      "warnings": 0
+    }
+  },
+  "next_actions": [
+    {
+      "command": "canon doctor",
+      "description": "Check repository readiness before remediating.",
+      "safety": "read-only"
+    }
+  ]
+}

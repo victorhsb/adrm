@@ -1,0 +1,27 @@
+{
+  "schema_version": "canon.v1",
+  "command": "show",
+  "status": "ok",
+  "data": {
+    "adr": {
+      "kind": "adr",
+      "id": "ADR-0001",
+      "number": 1,
+      "title": "Use SQLite",
+      "status": "accepted",
+      "date": "2025-01-06",
+      "tags": [
+        "storage"
+      ],
+      "path": "t-adr/0001-use-sqlite.md",
+      "content": "# ADR-0001: Use SQLite\n\n## Status\n\naccepted\n\n## Context\n\nNeed local querying\n\n## Decision\n\nUse SQLite\n\n## Consequences\n\nTBD\n"
+    }
+  },
+  "next_actions": [
+    {
+      "command": "canon append --id ADR-0001 --title Note --body \"...\"",
+      "description": "Add an appendix.",
+      "safety": "write"
+    }
+  ]
+}

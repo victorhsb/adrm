@@ -1,0 +1,52 @@
+{
+  "schema_version": "canon.v1",
+  "command": "list",
+  "status": "ok",
+  "data": {
+    "adrs": [
+      {
+        "kind": "adr",
+        "id": "ADR-0001",
+        "number": 1,
+        "title": "Use SQLite",
+        "status": "accepted",
+        "date": "2025-01-06",
+        "tags": [
+          "storage"
+        ],
+        "path": "t-adr/0001-use-sqlite.md"
+      },
+      {
+        "kind": "domain",
+        "id": "DM-0001",
+        "number": 1,
+        "title": "Decision Record",
+        "status": "proposed",
+        "date": "2025-01-08",
+        "path": "t-domain/0001-decision-record.md"
+      },
+      {
+        "kind": "spec",
+        "id": "SPEC-0001",
+        "number": 1,
+        "title": "Storage Requirements",
+        "status": "accepted",
+        "date": "2025-01-07",
+        "path": "t-spec/0001-storage-requirements.md"
+      }
+    ],
+    "count": 3
+  },
+  "next_actions": [
+    {
+      "command": "canon show --id ADR-0001",
+      "description": "Inspect a selected id from the result set.",
+      "safety": "read-only"
+    },
+    {
+      "command": "canon search --query text",
+      "description": "Search ADR, SPEC, and domain entry content when the list is too broad.",
+      "safety": "read-only"
+    }
+  ]
+}

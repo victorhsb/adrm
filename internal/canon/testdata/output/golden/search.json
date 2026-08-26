@@ -1,0 +1,33 @@
+{
+  "schema_version": "canon.v1",
+  "command": "search",
+  "status": "ok",
+  "data": {
+    "count": 1,
+    "query": "querying",
+    "results": [
+      {
+        "adr": {
+          "kind": "adr",
+          "id": "ADR-0001",
+          "number": 1,
+          "title": "Use SQLite",
+          "status": "accepted",
+          "date": "2025-01-06",
+          "tags": [
+            "storage"
+          ],
+          "path": "t-adr/0001-use-sqlite.md"
+        },
+        "snippet": "R-0001: Use SQLite ## Status accepted ## Context Need local querying ## Decision Use SQLite ## Consequences TBD"
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon show --id ADR-0001",
+      "description": "Inspect a selected result id.",
+      "safety": "read-only"
+    }
+  ]
+}

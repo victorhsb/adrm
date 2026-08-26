@@ -1,0 +1,34 @@
+{
+  "schema_version": "canon.v1",
+  "command": "accept",
+  "status": "planned",
+  "data": {
+    "plan": {
+      "dry_run": true,
+      "changes_made": false,
+      "operations": [
+        {
+          "action": "update_file",
+          "path": "t-adr/0001-use-sqlite.md",
+          "description": "Set status=accepted and append history."
+        }
+      ]
+    },
+    "target_id": "ADR-0001"
+  },
+  "warnings": [
+    "No changes were made."
+  ],
+  "next_actions": [
+    {
+      "command": "canon accept --id ADR-0001 --reason \"Approved for review.\"",
+      "description": "Apply this previewed mutation.",
+      "safety": "write"
+    },
+    {
+      "command": "canon show --id ADR-0001",
+      "description": "Inspect current document before mutating it.",
+      "safety": "read-only"
+    }
+  ]
+}

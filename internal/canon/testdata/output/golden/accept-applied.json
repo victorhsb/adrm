@@ -1,0 +1,34 @@
+{
+  "schema_version": "canon.v1",
+  "command": "accept",
+  "status": "ok",
+  "data": {
+    "adr": {
+      "kind": "spec",
+      "id": "SPEC-0001",
+      "number": 1,
+      "title": "Storage Requirements",
+      "status": "accepted",
+      "date": "2025-01-07",
+      "path": "t-spec/0001-storage-requirements.md"
+    },
+    "plan": {
+      "dry_run": false,
+      "changes_made": true,
+      "operations": [
+        {
+          "action": "update_file",
+          "path": "t-spec/0001-storage-requirements.md",
+          "description": "Set status=accepted and append history."
+        }
+      ]
+    }
+  },
+  "next_actions": [
+    {
+      "command": "canon show --id SPEC-0001",
+      "description": "Inspect the updated document.",
+      "safety": "read-only"
+    }
+  ]
+}

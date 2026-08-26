@@ -1,0 +1,26 @@
+{
+  "schema_version": "canon.v1",
+  "command": "adr init",
+  "status": "planned",
+  "data": {
+    "dry_run": true,
+    "changes_made": false,
+    "operations": [
+      {
+        "action": "mkdir",
+        "path": "t-newstore",
+        "description": "Create adr directory if missing."
+      }
+    ]
+  },
+  "warnings": [
+    "No changes were made."
+  ],
+  "next_actions": [
+    {
+      "command": "canon adr init",
+      "description": "Apply this directory creation plan.",
+      "safety": "write"
+    }
+  ]
+}

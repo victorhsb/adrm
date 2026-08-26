@@ -46,6 +46,11 @@ Fields:
 - `--format`: output format. Values: `json`, `text`, `context`. Default: `json`.
 - `-t`: shorthand for `--format text`.
 
+The `text` format is a human-readable projection. Every successful command
+renders its payload data after the status line, for unprefixed and
+kind-prefixed forms alike. Text is not an automation contract: parse JSON
+instead.
+
 The `context` format is supported only by `list`, `adr list`, `spec list`,
 and `domain list`. It emits a bounded Markdown projection for prompt
 injection. Other commands reject it with `unsupported_context_format`.

@@ -1,0 +1,23 @@
+{
+  "schema_version": "canon.v1",
+  "command": "adr init",
+  "status": "ok",
+  "data": {
+    "dry_run": false,
+    "changes_made": true,
+    "operations": [
+      {
+        "action": "mkdir",
+        "path": "t-newstore",
+        "description": "Create adr directory if missing."
+      }
+    ]
+  },
+  "next_actions": [
+    {
+      "command": "canon adr new --title \"First adr\" --dry-run",
+      "description": "Preview creating the first document.",
+      "safety": "preview"
+    }
+  ]
+}

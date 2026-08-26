@@ -1,0 +1,11 @@
+{
+  "schema_version": "canon.v1",
+  "command": "frobnicate",
+  "status": "error",
+  "error": {
+    "code": "unknown_command",
+    "category": "usage",
+    "message": "unknown command \"frobnicate\"",
+    "suggested_fix": "Run `canon commands` to inspect valid commands."
+  }
+}

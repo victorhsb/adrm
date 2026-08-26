@@ -15,61 +15,64 @@ const (
 	exitIO       = 5
 )
 
+// outputPayload is the capability every successful command payload
+// implements: a deterministic text projection for --format text.
+type outputPayload interface {
+	renderText(io.Writer)
+}
+
+// contextPayload is the bounded Markdown projection available to
+// --format context. Only the list payload implements it, matching the
+// early supportsContextFormat gate in Run.
+type contextPayload interface {
+	renderContext(io.Writer)
+}
+
+// Renderer renders one envelope fully in a single output format.
+type Renderer interface {
+	Render(io.Writer, Envelope)
+}
+
+// renderers resolves validated format names to rendering strategies,
+// replacing format-string dispatch in writeEnvelope.
+var renderers = map[string]Renderer{
+	"json":    jsonRenderer{},
+	"text":    textRenderer{},
+	"context": contextRenderer{},
+}
+
+// writeEnvelope applies envelope defaults and renders through the resolved
+// renderer. Unknown formats render as JSON, preserving the historical
+// fall-through for paths that write before format validation.
 func writeEnvelope(out io.Writer, env Envelope, format string) {
 	env.SchemaVersion = SchemaVersion
 	if env.Status == "" {
 		env.Status = "ok"
 	}
-	if format == "text" {
-		writeText(out, env)
+	if renderer, ok := renderers[format]; ok {
+		renderer.Render(out, env)
 		return
 	}
-	if format == "context" {
-		writeContext(out, env)
-		return
-	}
+	jsonRenderer{}.Render(out, env)
+}
+
+// jsonRenderer owns the canon.v1 JSON contract: the versioned envelope,
+// indented with two spaces.
+type jsonRenderer struct{}
+
+func (jsonRenderer) Render(out io.Writer, env Envelope) {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(env)
 }
 
-func writeContext(out io.Writer, env Envelope) {
-	if env.Error != nil {
-		fmt.Fprintf(out, "## Canon Error\n\n- `%s`: %s\n", env.Error.Code, env.Error.Message)
-		return
-	}
+// textRenderer writes the human opt-in projection: generic envelope lines
+// (command, status, warnings, next actions) plus the payload's own text
+// rendering. Payloads without a text projection cannot reach this path once
+// they implement outputPayload, so data can no longer disappear silently.
+type textRenderer struct{}
 
-	payload, ok := env.Data.(map[string]any)
-	if !ok {
-		return
-	}
-	var data struct {
-		ADRs []ADR `json:"adrs"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-
-	heading := "Project Documents"
-	switch env.Command {
-	case "adr list":
-		heading = "Architecture Decision Records"
-	case "spec list":
-		heading = "Specifications"
-	case "domain list":
-		heading = "Domain Model"
-	}
-	fmt.Fprintf(out, "## %s\n\n", heading)
-	if len(data.ADRs) == 0 {
-		fmt.Fprintln(out, "_No matching documents._")
-		return
-	}
-	for _, adr := range data.ADRs {
-		fmt.Fprintf(out, "- `%s`: %s\n", adr.ID, adr.Title)
-	}
-}
-
-func writeText(out io.Writer, env Envelope) {
+func (textRenderer) Render(out io.Writer, env Envelope) {
 	if env.Error != nil {
 		fmt.Fprintf(out, "error: %s\n%s\nsuggested fix: %s\n", env.Error.Code, env.Error.Message, env.Error.SuggestedFix)
 		return
@@ -78,7 +81,9 @@ func writeText(out io.Writer, env Envelope) {
 	if len(env.Warnings) > 0 {
 		fmt.Fprintf(out, "warnings: %s\n", strings.Join(env.Warnings, "; "))
 	}
-	renderDataText(out, env.Command, env.Data)
+	if payload, ok := env.Data.(outputPayload); ok {
+		payload.renderText(out)
+	}
 	if len(env.NextActions) > 0 {
 		fmt.Fprintln(out, "next actions:")
 		for _, action := range env.NextActions {
@@ -87,322 +92,17 @@ func writeText(out io.Writer, env Envelope) {
 	}
 }
 
-func renderDataText(out io.Writer, command string, data any) {
-	if data == nil {
+// contextRenderer writes the bounded Markdown projection for list payloads
+// and the compact error block for context-formatted error envelopes.
+type contextRenderer struct{}
+
+func (contextRenderer) Render(out io.Writer, env Envelope) {
+	if env.Error != nil {
+		fmt.Fprintf(out, "## Canon Error\n\n- `%s`: %s\n", env.Error.Code, env.Error.Message)
 		return
 	}
-	payload, ok := data.(map[string]any)
-	if !ok {
-		return
-	}
-	switch command {
-	case "commands":
-		renderCommandsText(out, payload)
-	case "version":
-		renderVersionText(out, payload)
-	case "doctor":
-		renderDoctorText(out, payload)
-	case "validate", "adr validate", "spec validate", "domain validate":
-		renderValidateText(out, payload)
-	case "config show":
-		renderConfigShowText(out, payload)
-	case "config validate":
-		renderConfigValidateText(out, payload)
-	case "list":
-		renderListText(out, payload)
-	case "show":
-		renderShowText(out, payload)
-	case "search":
-		renderSearchText(out, payload)
-	case "init", "new", "accept", "reject", "supersede", "deprecate", "append", "skill install", "skill update":
-		renderMutationText(out, payload)
-	case "skill":
-		renderSkillText(out, payload)
-	}
-}
-
-func jsonCopy(src, dst any) bool {
-	b, err := json.Marshal(src)
-	if err != nil {
-		return false
-	}
-	return json.Unmarshal(b, dst) == nil
-}
-
-func renderCommandsText(out io.Writer, payload map[string]any) {
-	var info struct {
-		Commands    []CommandInfo       `json:"commands"`
-		GlobalFlags []map[string]string `json:"global_flags"`
-	}
-	if !jsonCopy(payload, &info) {
-		return
-	}
-	fmt.Fprintln(out, "commands:")
-	for _, cmd := range info.Commands {
-		fmt.Fprintf(out, "  %s\n", cmd.Name)
-		fmt.Fprintf(out, "    purpose: %s\n", cmd.Purpose)
-		fmt.Fprintf(out, "    safety: %s\n", cmd.Safety)
-		if cmd.Mutating {
-			fmt.Fprintln(out, "    mutating: true")
-		}
-		if cmd.HasDryRun {
-			fmt.Fprintln(out, "    has_dry_run: true")
-		}
-		if len(cmd.Selectors) > 0 {
-			fmt.Fprintf(out, "    selectors: %s\n", strings.Join(cmd.Selectors, ", "))
-		}
-		for _, example := range cmd.Examples {
-			fmt.Fprintf(out, "    example: %s\n", example)
-		}
-	}
-	if len(info.GlobalFlags) > 0 {
-		fmt.Fprintln(out, "global flags:")
-		for _, flag := range info.GlobalFlags {
-			fmt.Fprintf(out, "  %s (default: %s)\n    %s\n", flag["name"], flag["default"], flag["purpose"])
-		}
-	}
-}
-
-func renderVersionText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Version string `json:"version"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintf(out, "version: %s\n", data.Version)
-}
-
-func renderDoctorText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Diagnostics []Diagnostic `json:"diagnostics"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintln(out, "diagnostics:")
-	for _, d := range data.Diagnostics {
-		fmt.Fprintf(out, "  %s: %s - %s\n", d.Name, d.Status, d.Message)
-	}
-}
-
-func renderValidateText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Findings []Diagnostic `json:"findings"`
-		Summary  struct {
-			FilesChecked int `json:"files_checked"`
-			Errors       int `json:"errors"`
-			Warnings     int `json:"warnings"`
-		} `json:"summary"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintln(out, "findings:")
-	for _, f := range data.Findings {
-		where := f.Path
-		if f.ID != "" {
-			where = strings.TrimSpace(where + " " + f.ID)
-		}
-		if where != "" {
-			fmt.Fprintf(out, "  %s: %s - %s (%s)\n", f.Name, f.Status, f.Message, where)
-			continue
-		}
-		fmt.Fprintf(out, "  %s: %s - %s\n", f.Name, f.Status, f.Message)
-	}
-	fmt.Fprintf(out, "summary: files_checked=%d errors=%d warnings=%d\n", data.Summary.FilesChecked, data.Summary.Errors, data.Summary.Warnings)
-}
-
-// joinOrDash renders a string list for single-line text output.
-func joinOrDash(values []string) string {
-	if len(values) == 0 {
-		return "-"
-	}
-	return strings.Join(values, ", ")
-}
-
-func renderConfigShowText(out io.Writer, payload map[string]any) {
-	var data configReport
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintf(out, "source: %s\n", data.Source)
-	if data.Path != "" {
-		fmt.Fprintf(out, "path: %s\n", data.Path)
-	}
-	fmt.Fprintln(out, "discovery paths:")
-	for _, kind := range supportedKinds {
-		fmt.Fprintf(out, "  %s: %s\n", kind, data.DiscoveryPaths[kind])
-	}
-	conv := data.Effective.Conventions
-	fmt.Fprintln(out, "effective configuration:")
-	fmt.Fprintf(out, "  schema_version: %s\n", data.Effective.SchemaVersion)
-	fmt.Fprintf(out, "  append: %t\n", conv.Append)
-	fmt.Fprintf(out, "  required_kinds: %s\n", strings.Join(conv.RequiredKinds, ", "))
-	fmt.Fprintf(out, "  validation.strict: %t\n", conv.Validation.Strict)
-	fmt.Fprintf(out, "  lifecycle.require_reason: %t\n", conv.Lifecycle.RequireReason)
-	fmt.Fprintf(out, "  lifecycle.new_documents_must_be_proposed: %t\n", conv.Lifecycle.NewDocumentsMustBeProposed)
-	if len(conv.Tags) == 0 {
-		fmt.Fprintln(out, "  tags: unrestricted for every kind")
-	} else {
-		fmt.Fprintln(out, "  tags:")
-		for _, kind := range supportedKinds {
-			policy, ok := conv.Tags[kind]
-			if !ok {
-				fmt.Fprintf(out, "    %s: unrestricted\n", kind)
-				continue
-			}
-			fmt.Fprintf(out, "    %s allowed: %s\n", kind, allowedTagsDisplay(policy.Allowed))
-		}
-	}
-	fmt.Fprintf(out, "recognized keys: %s\n", joinOrDash(data.RecognizedKeys))
-	fmt.Fprintf(out, "unknown keys: %s\n", joinOrDash(data.UnknownKeys))
-}
-
-func renderConfigValidateText(out io.Writer, payload map[string]any) {
-	renderValidateText(out, payload)
-	if raw, ok := payload["config"].(map[string]any); ok {
-		renderConfigShowText(out, raw)
-	}
-}
-
-func renderListText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Count int   `json:"count"`
-		ADRs  []ADR `json:"adrs"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintf(out, "count: %d\n", data.Count)
-	if len(data.ADRs) > 0 {
-		fmt.Fprintln(out, "adrs:")
-		for _, adr := range data.ADRs {
-			tags := strings.Join(adr.Tags, ", ")
-			if tags == "" {
-				tags = "-"
-			}
-			fmt.Fprintf(out, "  %s: %s [%s] (%s)\n", adr.ID, adr.Title, adr.Status, tags)
-		}
-	}
-}
-func renderShowText(out io.Writer, payload map[string]any) {
-	var data struct {
-		ADR ADR `json:"adr"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	renderADRText(out, data.ADR, true)
-}
-
-func renderSearchText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Query   string           `json:"query"`
-		Count   int              `json:"count"`
-		Results []map[string]any `json:"results"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintf(out, "query: %s\n", data.Query)
-	fmt.Fprintf(out, "count: %d\n", data.Count)
-	if len(data.Results) > 0 {
-		fmt.Fprintln(out, "results:")
-		for _, r := range data.Results {
-			var adr ADR
-			var snippet string
-			if a, ok := r["adr"]; ok {
-				_ = jsonCopy(a, &adr)
-			}
-			if s, ok := r["snippet"].(string); ok {
-				snippet = s
-			}
-			fmt.Fprintf(out, "  %s: %s [%s]\n", adr.ID, adr.Title, adr.Status)
-			if snippet != "" {
-				fmt.Fprintf(out, "    snippet: %s\n", snippet)
-			}
-		}
-	}
-}
-
-func renderMutationText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Plan Plan `json:"plan"`
-		ADR  ADR  `json:"adr"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	if len(data.Plan.Operations) > 0 {
-		fmt.Fprintln(out, "plan:")
-		for _, op := range data.Plan.Operations {
-			fmt.Fprintf(out, "  %s: %s\n    %s\n", op.Action, op.Path, op.Description)
-		}
-		fmt.Fprintf(out, "dry_run: %t\n", data.Plan.DryRun)
-		fmt.Fprintf(out, "changes_made: %t\n", data.Plan.ChangesMade)
-	}
-	if data.ADR.ID != "" {
-		renderADRText(out, data.ADR, false)
-	}
-}
-
-func renderSkillText(out io.Writer, payload map[string]any) {
-	var data struct {
-		Assets []struct {
-			Name        string   `json:"name"`
-			Kind        string   `json:"kind"`
-			Version     string   `json:"version"`
-			Hash        string   `json:"hash"`
-			TargetPaths []string `json:"target_paths"`
-		} `json:"assets"`
-		DefaultSkillDir string `json:"default_skill_dir"`
-	}
-	if !jsonCopy(payload, &data) {
-		return
-	}
-	fmt.Fprintf(out, "default_skill_dir: %s\n", data.DefaultSkillDir)
-	fmt.Fprintln(out, "assets:")
-	for _, asset := range data.Assets {
-		fmt.Fprintf(out, "  %s [%s]\n", asset.Name, asset.Kind)
-		fmt.Fprintf(out, "    version: %s\n", asset.Version)
-		fmt.Fprintf(out, "    hash: %s\n", asset.Hash)
-		if len(asset.TargetPaths) > 0 {
-			fmt.Fprintln(out, "    target paths:")
-			for _, path := range asset.TargetPaths {
-				fmt.Fprintf(out, "      %s\n", path)
-			}
-		}
-	}
-}
-
-func renderADRText(out io.Writer, adr ADR, includeContent bool) {
-	fmt.Fprintln(out, "adr:")
-	if adr.Kind != "" {
-		fmt.Fprintf(out, "  kind: %s\n", adr.Kind)
-	}
-	fmt.Fprintf(out, "  id: %s\n", adr.ID)
-	fmt.Fprintf(out, "  title: %s\n", adr.Title)
-	fmt.Fprintf(out, "  status: %s\n", adr.Status)
-	fmt.Fprintf(out, "  date: %s\n", adr.Date)
-	if len(adr.Tags) > 0 {
-		fmt.Fprintf(out, "  tags: %s\n", strings.Join(adr.Tags, ", "))
-	}
-	if adr.SupersededBy != "" {
-		fmt.Fprintf(out, "  superseded_by: %s\n", adr.SupersededBy)
-	}
-	if len(adr.Supersedes) > 0 {
-		fmt.Fprintf(out, "  supersedes: %s\n", strings.Join(adr.Supersedes, ", "))
-	}
-	if adr.DeprecatedBy != "" {
-		fmt.Fprintf(out, "  deprecated_by: %s\n", adr.DeprecatedBy)
-	}
-	fmt.Fprintf(out, "  path: %s\n", adr.Path)
-	if includeContent && adr.Content != "" {
-		fmt.Fprintln(out, "  content:")
-		for _, line := range strings.Split(adr.Content, "\n") {
-			fmt.Fprintf(out, "    %s\n", line)
-		}
+	if payload, ok := env.Data.(contextPayload); ok {
+		payload.renderContext(out)
 	}
 }
 

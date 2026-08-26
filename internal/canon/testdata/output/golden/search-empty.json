@@ -1,0 +1,17 @@
+{
+  "schema_version": "canon.v1",
+  "command": "search",
+  "status": "ok",
+  "data": {
+    "count": 0,
+    "query": "zzzz",
+    "results": []
+  },
+  "next_actions": [
+    {
+      "command": "canon show --id ADR-0001",
+      "description": "Inspect a selected result id.",
+      "safety": "read-only"
+    }
+  ]
+}

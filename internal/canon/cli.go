@@ -113,9 +113,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		writeEnvelope(stdout, Envelope{
 			Command: "canon",
 			Status:  "ok",
-			Data: map[string]any{
-				"purpose":  "Manage Architecture Decision Records, Specs, and Domain Entries for agent workflows.",
-				"commands": commandNames(),
+			Data: rootPayload{
+				Commands: commandNames(),
+				Purpose:  "Manage Architecture Decision Records, Specs, and Domain Entries for agent workflows.",
 			},
 			NextActions: []NextAction{
 				{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"},
@@ -201,14 +201,14 @@ func runKindCommand(kind string, stdout, stderr io.Writer, opts GlobalOptions, r
 func runCommands(stdout io.Writer, opts GlobalOptions) int {
 	writeEnvelope(stdout, Envelope{
 		Command: "commands",
-		Data: map[string]any{
-			"commands": commandRegistry(),
-			"global_flags": []map[string]string{
-				{"name": "--adr-dir", "default": defaultADRDir, "purpose": "Select ADR storage directory."},
-				{"name": "--spec-dir", "default": defaultSpecDir, "purpose": "Select SPEC storage directory."},
-				{"name": "--domain-dir", "default": defaultDomainDir, "purpose": "Select domain entry storage directory."},
-				{"name": "--format", "default": "json", "purpose": "Choose json, text, or list-only context output."},
-				{"name": "-t", "default": "false", "purpose": "Shorthand for --format text."},
+		Data: commandsPayload{
+			Commands: commandRegistry(),
+			GlobalFlags: []globalFlag{
+				{Name: "--adr-dir", Default: defaultADRDir, Purpose: "Select ADR storage directory."},
+				{Name: "--spec-dir", Default: defaultSpecDir, Purpose: "Select SPEC storage directory."},
+				{Name: "--domain-dir", Default: defaultDomainDir, Purpose: "Select domain entry storage directory."},
+				{Name: "--format", Default: "json", Purpose: "Choose json, text, or list-only context output."},
+				{Name: "-t", Default: "false", Purpose: "Shorthand for --format text."},
 			},
 		},
 		NextActions: []NextAction{{Command: "canon doctor", Description: "Check if the ADR, SPEC, and domain directories are ready.", Safety: "read-only"}},
@@ -219,8 +219,8 @@ func runCommands(stdout io.Writer, opts GlobalOptions) int {
 func runVersion(stdout io.Writer, opts GlobalOptions) int {
 	writeEnvelope(stdout, Envelope{
 		Command: "version",
-		Data: map[string]any{
-			"version": versionString(),
+		Data: versionPayload{
+			Version: versionString(),
 		},
 		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect all available commands and safety rules.", Safety: "read-only"}},
 	}, opts.Format)
@@ -323,12 +323,9 @@ func runValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args [
 	}
 	nextActions = append(nextActions, NextAction{Command: "canon doctor", Description: "Check repository readiness before remediating.", Safety: "read-only"})
 	writeEnvelope(stdout, Envelope{
-		Command: command,
-		Status:  status,
-		Data: map[string]any{
-			"findings": result.Findings,
-			"summary":  result.Summary,
-		},
+		Command:     command,
+		Status:      status,
+		Data:        validatePayload(result),
 		NextActions: nextActions,
 	}, opts.Format)
 	// Strictness combines the invocation flag with repository policy by
@@ -373,14 +370,14 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		writeEnvelope(stdout, Envelope{
 			Command:     "doctor",
 			Status:      "warning",
-			Data:        map[string]any{"diagnostics": checks},
+			Data:        doctorPayload{Diagnostics: checks},
 			NextActions: doctorRemediationActions(repo, cfg),
 		}, opts.Format)
 		return exitOK
 	}
 	writeEnvelope(stdout, Envelope{
 		Command: "doctor",
-		Data:    map[string]any{"diagnostics": checks},
+		Data:    doctorPayload{Diagnostics: checks},
 		NextActions: []NextAction{
 			{Command: "canon list", Description: "Inspect ADR, SPEC, and domain entry inventory.", Safety: "read-only"},
 			{Command: `canon adr new --title "..." --dry-run`, Description: "Preview creating a new ADR.", Safety: "preview"},
@@ -623,9 +620,9 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 		writeEnvelope(stdout, Envelope{
 			Command: command,
 			Status:  "planned",
-			Data: map[string]any{
-				"plan": plan,
-				"adr":  ADR{Kind: kind, ID: formatID(kind, next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
+			Data: mutationPayload{
+				Plan: plan,
+				ADR:  ADR{Kind: kind, ID: formatID(kind, next), Number: next, Title: strings.TrimSpace(*title), Status: statusValue, Date: time.Now().Format("2006-01-02"), Tags: parseList(*tags), Path: path},
 			},
 			Warnings: []string{"No changes were made."},
 			NextActions: []NextAction{
@@ -642,7 +639,7 @@ func runNew(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []stri
 	plan.ChangesMade = true
 	writeEnvelope(stdout, Envelope{
 		Command: command,
-		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
+		Data:    mutationPayload{Plan: plan, ADR: adrSummary(adr)},
 		NextActions: []NextAction{
 			{Command: fmt.Sprintf("canon show --id %s", adr.ID), Description: "Inspect the created document.", Safety: "read-only"},
 			{Command: fmt.Sprintf("canon %s list", kind), Description: "Refresh document inventory.", Safety: "read-only"},
@@ -735,9 +732,10 @@ func runList(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	docs = filterADRs(docs, *status, *tag, "")
 	writeEnvelope(stdout, Envelope{
 		Command: command,
-		Data: map[string]any{
-			"count": len(docs),
-			"adrs":  summaries(docs),
+		Data: listPayload{
+			Count: len(docs),
+			ADRs:  summaries(docs),
+			scope: kind,
 		},
 		NextActions: []NextAction{
 			{Command: "canon show --id ADR-0001", Description: "Inspect a selected id from the result set.", Safety: "read-only"},
@@ -782,7 +780,7 @@ func runShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []str
 	}
 	writeEnvelope(stdout, Envelope{
 		Command:     "show",
-		Data:        map[string]any{"adr": adr},
+		Data:        showPayload{ADR: adr},
 		NextActions: nextActions,
 	}, opts.Format)
 	return exitOK
@@ -816,10 +814,10 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	results := filterADRs(docs, *status, *tag, *query)
 	writeEnvelope(stdout, Envelope{
 		Command: command,
-		Data: map[string]any{
-			"query":   *query,
-			"count":   len(results),
-			"results": searchResults(results, *query),
+		Data: searchPayload{
+			Query:   *query,
+			Count:   len(results),
+			Results: searchResults(results, *query),
 		},
 		NextActions: []NextAction{{Command: "canon show --id ADR-0001", Description: "Inspect a selected result id.", Safety: "read-only"}},
 	}, opts.Format)
@@ -1091,9 +1089,9 @@ func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
 	if len(args) == 0 {
 		writeEnvelope(stdout, Envelope{
 			Command: "skill",
-			Data: map[string]any{
-				"assets":            skill.Catalog(),
-				"default_skill_dir": skill.DefaultInstallDir,
+			Data: skillCatalogPayload{
+				Assets:          skill.Catalog(),
+				DefaultSkillDir: skill.DefaultInstallDir,
 			},
 			NextActions: []NextAction{
 				{Command: "canon skill install --dry-run", Description: "Preview installing the bundled agent skills and subagent components.", Safety: "preview"},
@@ -1174,10 +1172,10 @@ func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string
 	plan.ChangesMade = true
 	writeEnvelope(stdout, Envelope{
 		Command: "skill install",
-		Data: map[string]any{
-			"plan":    plan,
-			"assets":  skillSelectedMetadata(files),
-			"targets": targets,
+		Data: skillMutationPayload{
+			Plan:    plan,
+			Assets:  skillSelectedMetadata(files),
+			Targets: targets,
 		},
 		NextActions: []NextAction{
 			{Command: skillUpdatePreviewCommand(*skillDir, commandAssetSelection(onlyFlags, selectedAssets), targets), Description: "Preview updating the installed bundle later.", Safety: "preview"},
@@ -1271,10 +1269,10 @@ func runSkillUpdate(stdout, stderr io.Writer, opts GlobalOptions, args []string)
 	}
 	writeEnvelope(stdout, Envelope{
 		Command: "skill update",
-		Data: map[string]any{
-			"plan":    plan,
-			"assets":  skillSelectedMetadata(files),
-			"targets": targets,
+		Data: skillMutationPayload{
+			Plan:    plan,
+			Assets:  skillSelectedMetadata(files),
+			Targets: targets,
 		},
 		NextActions: []NextAction{{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"}},
 	}, opts.Format)
@@ -1368,10 +1366,10 @@ func skillDryRunEnvelope(command string, plan Plan, files []skill.ManagedFile, t
 	return Envelope{
 		Command: command,
 		Status:  "planned",
-		Data: map[string]any{
-			"plan":    plan,
-			"assets":  skillSelectedMetadata(files),
-			"targets": targets,
+		Data: skillMutationPayload{
+			Plan:    plan,
+			Assets:  skillSelectedMetadata(files),
+			Targets: targets,
 		},
 		Warnings: []string{"No changes were made."},
 		NextActions: []NextAction{
@@ -1380,7 +1378,7 @@ func skillDryRunEnvelope(command string, plan Plan, files []skill.ManagedFile, t
 	}
 }
 
-func skillSelectedMetadata(files []skill.ManagedFile) []map[string]any {
+func skillSelectedMetadata(files []skill.ManagedFile) []skillManagedAsset {
 	catalog := make(map[string]skill.CatalogAsset)
 	for _, asset := range skill.Catalog() {
 		catalog[asset.Name] = asset
@@ -1394,16 +1392,16 @@ func skillSelectedMetadata(files []skill.ManagedFile) []map[string]any {
 		paths[file.AssetName] = append(paths[file.AssetName], file.Path)
 	}
 	sort.Strings(order)
-	assets := make([]map[string]any, 0, len(order))
+	assets := make([]skillManagedAsset, 0, len(order))
 	for _, name := range order {
 		asset := catalog[name]
 		sort.Strings(paths[name])
-		assets = append(assets, map[string]any{
-			"name":         asset.Name,
-			"kind":         asset.Kind,
-			"version":      asset.Version,
-			"hash":         asset.Hash,
-			"target_paths": paths[name],
+		assets = append(assets, skillManagedAsset{
+			Hash:        asset.Hash,
+			Kind:        asset.Kind,
+			Name:        asset.Name,
+			TargetPaths: paths[name],
+			Version:     asset.Version,
 		})
 	}
 	return assets
@@ -1630,12 +1628,12 @@ func adrMatches(adr ADR, query string) bool {
 	return strings.Contains(haystack, query)
 }
 
-func searchResults(adrs []ADR, query string) []map[string]any {
-	results := []map[string]any{}
+func searchResults(adrs []ADR, query string) []searchResult {
+	results := []searchResult{}
 	for _, adr := range adrs {
-		results = append(results, map[string]any{
-			"adr":     adrSummary(adr),
-			"snippet": snippet(adr, query),
+		results = append(results, searchResult{
+			ADR:     adrSummary(adr),
+			Snippet: snippet(adr, query),
 		})
 	}
 	return results
@@ -1718,7 +1716,7 @@ func dryRunEnvelope(command string, plan Plan, id, applyCommand string) Envelope
 	return Envelope{
 		Command:  command,
 		Status:   "planned",
-		Data:     map[string]any{"plan": plan, "target_id": id},
+		Data:     planDryRunPayload{Plan: plan, TargetID: id},
 		Warnings: []string{"No changes were made."},
 		NextActions: []NextAction{
 			{Command: applyCommand, Description: "Apply this previewed mutation.", Safety: "write"},
@@ -1730,7 +1728,7 @@ func dryRunEnvelope(command string, plan Plan, id, applyCommand string) Envelope
 func mutationEnvelope(command string, plan Plan, adr ADR) Envelope {
 	return Envelope{
 		Command: command,
-		Data:    map[string]any{"plan": plan, "adr": adrSummary(adr)},
+		Data:    mutationPayload{Plan: plan, ADR: adrSummary(adr)},
 		NextActions: []NextAction{
 			{Command: fmt.Sprintf("canon show --id %s", adr.ID), Description: "Inspect the updated document.", Safety: "read-only"},
 		},

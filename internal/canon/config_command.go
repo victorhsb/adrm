@@ -14,26 +14,29 @@ import (
 // configReport is the JSON payload shared by config show and config validate.
 // It exposes the effective policy, its provenance, and the file's key paths
 // so agents can inspect configuration without reading the file themselves.
+// Fields are declared in alphabetical JSON name order at every level because
+// the payload was historically map-encoded; the exact key order is pinned by
+// the config show and config validate goldens.
 type configReport struct {
-	Source         string            `json:"source"`
-	Path           string            `json:"path,omitempty"`
 	DiscoveryPaths map[string]string `json:"discovery_paths"`
 	Effective      effectivePayload  `json:"effective"`
+	Path           string            `json:"path,omitempty"`
 	RecognizedKeys []string          `json:"recognized_keys"`
+	Source         string            `json:"source"`
 	UnknownKeys    []string          `json:"unknown_keys"`
 }
 
 type effectivePayload struct {
-	SchemaVersion string             `json:"schema_version"`
 	Conventions   conventionsPayload `json:"conventions"`
+	SchemaVersion string             `json:"schema_version"`
 }
 
 type conventionsPayload struct {
 	Append        bool                        `json:"append"`
-	RequiredKinds []string                    `json:"required_kinds"`
-	Validation    validationPayload           `json:"validation"`
 	Lifecycle     lifecyclePayload            `json:"lifecycle"`
+	RequiredKinds []string                    `json:"required_kinds"`
 	Tags          map[string]tagPolicyPayload `json:"tags"`
+	Validation    validationPayload           `json:"validation"`
 }
 
 type validationPayload struct {
@@ -41,8 +44,8 @@ type validationPayload struct {
 }
 
 type lifecyclePayload struct {
-	RequireReason              bool `json:"require_reason"`
 	NewDocumentsMustBeProposed bool `json:"new_documents_must_be_proposed"`
+	RequireReason              bool `json:"require_reason"`
 }
 
 type tagPolicyPayload struct {
@@ -67,35 +70,69 @@ func newConfigReport(resolution ConfigResolution) configReport {
 		unknown = []string{}
 	}
 	return configReport{
-		Source:         effective.Source,
-		Path:           effective.Path,
 		DiscoveryPaths: resolution.Discovery,
 		Effective: effectivePayload{
-			SchemaVersion: effective.SchemaVersion,
 			Conventions: conventionsPayload{
-				Append:        effective.AppendEnabled(),
-				RequiredKinds: effective.RequiredKinds(),
-				Validation:    validationPayload{Strict: effective.StrictValidation()},
+				Append: effective.AppendEnabled(),
 				Lifecycle: lifecyclePayload{
-					RequireReason:              effective.ReasonRequired(),
 					NewDocumentsMustBeProposed: effective.ProposedCreationRequired(),
+					RequireReason:              effective.ReasonRequired(),
 				},
-				Tags: tags,
+				RequiredKinds: effective.RequiredKinds(),
+				Tags:          tags,
+				Validation:    validationPayload{Strict: effective.StrictValidation()},
 			},
+			SchemaVersion: effective.SchemaVersion,
 		},
+		Path:           effective.Path,
 		RecognizedKeys: recognized,
+		Source:         effective.Source,
 		UnknownKeys:    unknown,
 	}
 }
 
-// reportPayload converts the report struct into a map so text rendering and
-// JSON encoding share one representation with deterministic key order.
-func reportPayload(report configReport) map[string]any {
-	var payload map[string]any
-	if !jsonCopy(report, &payload) {
-		return map[string]any{}
+// renderText renders the report for --format text: provenance first, then
+// the effective conventions, then the recognized and unknown key lists.
+func (r configReport) renderText(out io.Writer) {
+	fmt.Fprintf(out, "source: %s\n", r.Source)
+	if r.Path != "" {
+		fmt.Fprintf(out, "path: %s\n", r.Path)
 	}
-	return payload
+	fmt.Fprintln(out, "discovery paths:")
+	for _, kind := range supportedKinds {
+		fmt.Fprintf(out, "  %s: %s\n", kind, r.DiscoveryPaths[kind])
+	}
+	conv := r.Effective.Conventions
+	fmt.Fprintln(out, "effective configuration:")
+	fmt.Fprintf(out, "  schema_version: %s\n", r.Effective.SchemaVersion)
+	fmt.Fprintf(out, "  append: %t\n", conv.Append)
+	fmt.Fprintf(out, "  required_kinds: %s\n", strings.Join(conv.RequiredKinds, ", "))
+	fmt.Fprintf(out, "  validation.strict: %t\n", conv.Validation.Strict)
+	fmt.Fprintf(out, "  lifecycle.require_reason: %t\n", conv.Lifecycle.RequireReason)
+	fmt.Fprintf(out, "  lifecycle.new_documents_must_be_proposed: %t\n", conv.Lifecycle.NewDocumentsMustBeProposed)
+	if len(conv.Tags) == 0 {
+		fmt.Fprintln(out, "  tags: unrestricted for every kind")
+	} else {
+		fmt.Fprintln(out, "  tags:")
+		for _, kind := range supportedKinds {
+			policy, ok := conv.Tags[kind]
+			if !ok {
+				fmt.Fprintf(out, "    %s: unrestricted\n", kind)
+				continue
+			}
+			fmt.Fprintf(out, "    %s allowed: %s\n", kind, allowedTagsDisplay(policy.Allowed))
+		}
+	}
+	fmt.Fprintf(out, "recognized keys: %s\n", joinOrDash(r.RecognizedKeys))
+	fmt.Fprintf(out, "unknown keys: %s\n", joinOrDash(r.UnknownKeys))
+}
+
+// joinOrDash renders a string list for single-line text output.
+func joinOrDash(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	return strings.Join(values, ", ")
 }
 
 // runConfig dispatches the configuration inspection subcommands. The command
@@ -135,7 +172,7 @@ func runConfigShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args
 	}
 	writeEnvelope(stdout, Envelope{
 		Command: "config show",
-		Data:    reportPayload(newConfigReport(resolution)),
+		Data:    newConfigReport(resolution),
 		NextActions: []NextAction{
 			{Command: "canon config validate", Description: "Validate the configuration file against the schema.", Safety: "read-only"},
 			{Command: "canon doctor", Description: "Check corpus readiness under the effective configuration.", Safety: "read-only"},
@@ -268,12 +305,13 @@ func runConfigValidate(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, 
 		}
 	}
 
-	data := map[string]any{
-		"findings": findings,
-		"summary":  summary,
+	data := configValidatePayload{
+		Findings: findings,
+		Summary:  summary,
 	}
 	if resolution != nil {
-		data["config"] = reportPayload(newConfigReport(*resolution))
+		report := newConfigReport(*resolution)
+		data.Config = &report
 	}
 
 	status := "ok"

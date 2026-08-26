@@ -1,0 +1,59 @@
+{
+  "schema_version": "canon.v1",
+  "command": "canon",
+  "status": "ok",
+  "data": {
+    "commands": [
+      "accept",
+      "adr init",
+      "adr list",
+      "adr new",
+      "adr search",
+      "adr validate",
+      "append",
+      "commands",
+      "config show",
+      "config validate",
+      "deprecate",
+      "doctor",
+      "domain init",
+      "domain list",
+      "domain new",
+      "domain search",
+      "domain validate",
+      "list",
+      "reject",
+      "search",
+      "show",
+      "skill",
+      "skill install",
+      "skill update",
+      "spec init",
+      "spec list",
+      "spec new",
+      "spec search",
+      "spec validate",
+      "supersede",
+      "validate",
+      "version"
+    ],
+    "purpose": "Manage Architecture Decision Records, Specs, and Domain Entries for agent workflows."
+  },
+  "next_actions": [
+    {
+      "command": "canon commands",
+      "description": "Inspect all available commands and safety rules.",
+      "safety": "read-only"
+    },
+    {
+      "command": "canon doctor",
+      "description": "Check ADR, SPEC, and domain repository readiness.",
+      "safety": "read-only"
+    },
+    {
+      "command": "canon config show",
+      "description": "Inspect the effective repository configuration.",
+      "safety": "read-only"
+    }
+  ]
+}

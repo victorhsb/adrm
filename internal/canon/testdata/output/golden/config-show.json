@@ -1,0 +1,46 @@
+{
+  "schema_version": "canon.v1",
+  "command": "config show",
+  "status": "ok",
+  "data": {
+    "discovery_paths": {
+      "adr": "t-adr",
+      "domain": "t-domain",
+      "spec": "t-spec"
+    },
+    "effective": {
+      "conventions": {
+        "append": true,
+        "lifecycle": {
+          "new_documents_must_be_proposed": false,
+          "require_reason": false
+        },
+        "required_kinds": [
+          "adr",
+          "spec",
+          "domain"
+        ],
+        "tags": {},
+        "validation": {
+          "strict": false
+        }
+      },
+      "schema_version": "canon.v1"
+    },
+    "recognized_keys": [],
+    "source": "defaults",
+    "unknown_keys": []
+  },
+  "next_actions": [
+    {
+      "command": "canon config validate",
+      "description": "Validate the configuration file against the schema.",
+      "safety": "read-only"
+    },
+    {
+      "command": "canon doctor",
+      "description": "Check corpus readiness under the effective configuration.",
+      "safety": "read-only"
+    }
+  ]
+}
