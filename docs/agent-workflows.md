@@ -96,6 +96,22 @@ canon show --id ADR-0002
 Use ids from command output instead of reconstructing paths. Paths can change;
 ADR ids are the composable selectors.
 
+For large corpora, an optional cached index accelerates searches (ADR-0017).
+Markdown stays authoritative; the index is disposable and lives under the
+user cache directory:
+
+```sh
+canon index rebuild --dry-run
+canon index rebuild
+canon index status
+canon search --query "database" --use-index
+```
+
+Rebuild after editing documents, or whenever `index status` reports `stale`.
+When the index is absent, stale, corrupt, or unsupported, `--use-index`
+returns the same results as a Markdown search plus a warning, so scripts can
+pass it unconditionally. Unflagged search never touches the index.
+
 ## Planning changes
 
 The repository-local `project-planning` skill applies this discovery workflow

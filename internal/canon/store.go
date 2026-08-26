@@ -45,6 +45,9 @@ func (s Store) Init() error {
 func (s Store) List() ([]ADR, error) {
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %s", ErrStoreUnavailable, s.Dir)
+		}
 		return nil, err
 	}
 	var adrs []ADR
@@ -73,7 +76,7 @@ func (s Store) Read(id string) (ADR, error) {
 		return ADR{}, err
 	}
 	if kind != "" && kind != s.Kind {
-		return ADR{}, os.ErrNotExist
+		return ADR{}, fmt.Errorf("%w: %s is not a %s id", ErrDocumentNotFound, normalized, s.Kind)
 	}
 	adrs, err := s.List()
 	if err != nil {
@@ -84,7 +87,7 @@ func (s Store) Read(id string) (ADR, error) {
 			return adr, nil
 		}
 	}
-	return ADR{}, os.ErrNotExist
+	return ADR{}, fmt.Errorf("%w: %s", ErrDocumentNotFound, normalized)
 }
 
 func (s Store) ReadPath(path string) (ADR, error) {
@@ -106,7 +109,7 @@ func (s Store) ReadPath(path string) (ADR, error) {
 func (s Store) NextNumber() (int, error) {
 	adrs, err := s.List()
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, ErrStoreUnavailable) {
 			return 1, nil
 		}
 		return 0, err

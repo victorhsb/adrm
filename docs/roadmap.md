@@ -11,7 +11,10 @@ next steps should preserve agent-friendly behavior as the command surface grows.
 
 ## Querying improvements
 
-- Add a local index for larger ADR sets.
+- ~~Add a local index for larger ADR sets.~~ Implemented as an optional,
+  rebuildable JSONL cache (`canon index status`, `canon index rebuild`,
+  `search --use-index`; ADR-0017). Semantic search, ranking, and SQLite
+  remain future work and require their own decisions.
 - Support filters for date ranges, superseded relationships, and multiple tags.
 - Add `graph` output for supersede/deprecation relationships.
 - Add `related --id` to return linked or textually similar ADRs.

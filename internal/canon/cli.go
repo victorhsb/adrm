@@ -60,24 +60,7 @@ func (r Repo) StoreForID(id string) (Store, error) {
 // Missing directories are treated as empty rather than errors so that a fresh
 // repository with only some kinds initialized still lists cleanly.
 func (r Repo) All() ([]ADR, error) {
-	var docs []ADR
-	for _, store := range []Store{r.ADR, r.Spec, r.Domain} {
-		adrs, err := store.List()
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return nil, err
-		}
-		docs = append(docs, adrs...)
-	}
-	sort.Slice(docs, func(i, j int) bool {
-		if docs[i].Kind != docs[j].Kind {
-			return docs[i].Kind < docs[j].Kind
-		}
-		return docs[i].Number < docs[j].Number
-	})
-	return docs, nil
+	return listDocuments(r.ADR, r.Spec, r.Domain)
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -164,6 +147,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return runDeprecate(stdout, stderr, opts, repo, commandArgs)
 	case "append":
 		return runAppend(stdout, stderr, opts, repo, commandArgs)
+	case "index":
+		return runIndexCommand(stdout, stderr, opts, repo, commandArgs)
 	case "skill":
 		return runSkill(stdout, stderr, opts, commandArgs)
 	default:
@@ -357,7 +342,7 @@ func runDoctor(stdout io.Writer, opts GlobalOptions, repo Repo) int {
 		return exitIO
 	}
 	if repo.Domain.Exists() {
-		checks = append(checks, domainIntegrityChecks(repo)...)
+		checks = append(checks, domainIntegrityChecks(repo.Domain, repo.ADR, repo.Spec, repo.Domain)...)
 	}
 	anyWarning := false
 	for _, check := range checks {
@@ -430,9 +415,11 @@ var (
 
 // domainIntegrityChecks reports content-level findings about the domain
 // model: duplicate accepted titles (two live truths for one concept) and
-// references from live documents to superseded or deprecated entries.
-func domainIntegrityChecks(repo Repo) []Diagnostic {
-	entries, err := repo.Domain.List()
+// references from live documents to superseded or deprecated entries. The
+// domain reader supplies the entries under review; readers supply every live
+// document, and readers that are unavailable list as empty.
+func domainIntegrityChecks(domain DocumentReader, readers ...DocumentReader) []Diagnostic {
+	entries, err := domain.List()
 	if err != nil {
 		return nil
 	}
@@ -472,7 +459,7 @@ func domainIntegrityChecks(repo Repo) []Diagnostic {
 	for _, entry := range entries {
 		byID[entry.ID] = entry
 	}
-	docs, err := repo.All()
+	docs, err := listDocuments(readers...)
 	if err != nil {
 		return checks
 	}
@@ -798,6 +785,7 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	query := fs.String("query", "", "search query")
 	status := fs.String("status", "", "filter by status")
 	tag := fs.String("tag", "", "filter by tag")
+	useIndex := fs.Bool("use-index", false, "search through the cached index, falling back to Markdown")
 	if help, err := parseFlags(fs, args); err != nil {
 		writeEnvelope(stdout, usageError(command, err.Error()), opts.Format)
 		return exitUsage
@@ -807,32 +795,49 @@ func runSearch(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	if fs.NArg() > 0 && strings.TrimSpace(*query) == "" {
 		*query = strings.Join(fs.Args(), " ")
 	}
-	docs, err := docsForKind(repo, kind)
-	if err != nil {
-		return handleReadError(stdout, opts, command, err)
+	// searchResults always returns a non-nil slice, so a nil result set marks
+	// the Markdown path: either the default behavior or the non-fatal
+	// fallback when the index is absent, stale, corrupt, or unsupported
+	// (ADR-0017). The indexed path preserves Markdown search semantics.
+	var results []searchResult
+	var warnings []string
+	if *useIndex {
+		if lines, warning := loadFreshIndexLines(repo); warning != "" {
+			warnings = append(warnings, warning)
+		} else if docs, warning := searchIndexDocuments(lines, kind, *status, *tag, *query); warning != "" {
+			warnings = append(warnings, warning)
+		} else {
+			results = searchResults(docs, *query)
+		}
 	}
-	results := filterADRs(docs, *status, *tag, *query)
+	if results == nil {
+		docs, err := docsForKind(repo, kind)
+		if err != nil {
+			return handleReadError(stdout, opts, command, err)
+		}
+		results = searchResults(filterADRs(docs, *status, *tag, *query), *query)
+	}
 	writeEnvelope(stdout, Envelope{
 		Command: command,
 		Data: searchPayload{
 			Query:   *query,
 			Count:   len(results),
-			Results: searchResults(results, *query),
+			Results: results,
 		},
+		Warnings:    warnings,
 		NextActions: []NextAction{{Command: "canon show --id ADR-0001", Description: "Inspect a selected result id.", Safety: "read-only"}},
 	}, opts.Format)
 	return exitOK
 }
 
+// docsForKind loads the documents a list or search command reads. A missing
+// store yields an empty slice, matching the combined-corpus treatment of
+// optional kinds.
 func docsForKind(repo Repo, kind string) ([]ADR, error) {
 	if kind == "" {
 		return repo.All()
 	}
-	store := repo.StoreForKind(kind)
-	if !store.Exists() {
-		return []ADR{}, nil
-	}
-	return store.List()
+	return listDocuments(repo.StoreForKind(kind))
 }
 
 // enforceReasonPolicy resolves the store's repository policy and applies the
@@ -940,7 +945,7 @@ func runSupersede(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	byStore := repo.StoreForKind(byKind)
 	byADR, err := byStore.Read(byID)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrStoreUnavailable) {
 			writeEnvelope(stdout, errorEnvelope("supersede", "superseding_adr_not_found", "state", fmt.Sprintf("superseding document %s was not found", byID), "Create or select the replacement document first, then retry with --dry-run."), opts.Format)
 			return exitNotFound
 		}
@@ -1565,7 +1570,7 @@ func usageError(command, message string) Envelope {
 }
 
 func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err error) int {
-	if os.IsNotExist(err) {
+	if errors.Is(err, ErrDocumentNotFound) || errors.Is(err, ErrStoreUnavailable) {
 		writeEnvelope(stdout, errorEnvelope(command, "adr_not_found_or_uninitialized", "state", err.Error(), "Run `canon doctor`; if the directory is missing, run `canon adr init`, `canon spec init`, or `canon domain init`."), opts.Format)
 		return exitNotFound
 	}

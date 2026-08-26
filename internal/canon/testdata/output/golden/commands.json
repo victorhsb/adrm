@@ -328,34 +328,38 @@
       },
       {
         "name": "search",
-        "purpose": "Search title, tags, status, kind, and markdown body across ADRs, SPECs, and domain entries.",
+        "purpose": "Search title, tags, status, kind, and markdown body across ADRs, SPECs, and domain entries. Reads Markdown by default; --use-index searches the cached index when it is fresh and otherwise falls back to Markdown with a warning.",
         "mutating": false,
         "has_dry_run": false,
         "safety": "read-only",
         "selectors": [
           "--query",
           "--status",
-          "--tag"
+          "--tag",
+          "--use-index"
         ],
         "examples": [
           "canon search --query \"database\"",
-          "canon search --status deprecated"
+          "canon search --status deprecated",
+          "canon search --query \"database\" --use-index"
         ],
         "next_commands": [
           "canon show --id ADR-0001",
-          "canon show --id SPEC-0001"
+          "canon show --id SPEC-0001",
+          "canon index status"
         ]
       },
       {
         "name": "adr search",
-        "purpose": "Search title, tags, status, and markdown body across ADRs only.",
+        "purpose": "Search title, tags, status, and markdown body across ADRs only. --use-index searches the cached index with Markdown fallback.",
         "mutating": false,
         "has_dry_run": false,
         "safety": "read-only",
         "selectors": [
           "--query",
           "--status",
-          "--tag"
+          "--tag",
+          "--use-index"
         ],
         "examples": [
           "canon adr search --query \"database\""
@@ -366,14 +370,15 @@
       },
       {
         "name": "spec search",
-        "purpose": "Search title, tags, status, and markdown body across SPECs only.",
+        "purpose": "Search title, tags, status, and markdown body across SPECs only. --use-index searches the cached index with Markdown fallback.",
         "mutating": false,
         "has_dry_run": false,
         "safety": "read-only",
         "selectors": [
           "--query",
           "--status",
-          "--tag"
+          "--tag",
+          "--use-index"
         ],
         "examples": [
           "canon spec search --query requirements"
@@ -384,20 +389,53 @@
       },
       {
         "name": "domain search",
-        "purpose": "Search title, tags, status, and markdown body across domain entries only.",
+        "purpose": "Search title, tags, status, and markdown body across domain entries only. --use-index searches the cached index with Markdown fallback.",
         "mutating": false,
         "has_dry_run": false,
         "safety": "read-only",
         "selectors": [
           "--query",
           "--status",
-          "--tag"
+          "--tag",
+          "--use-index"
         ],
         "examples": [
           "canon domain search --query \"cancellation\""
         ],
         "next_commands": [
           "canon show --id DM-0001"
+        ]
+      },
+      {
+        "name": "index status",
+        "purpose": "Report the derived search index state for the configured corpus: absent, fresh, stale, corrupt, or unsupported, plus the cache path and schema version. The index lives under the user cache directory and never replaces Markdown authority.",
+        "mutating": false,
+        "has_dry_run": false,
+        "safety": "read-only",
+        "examples": [
+          "canon index status"
+        ],
+        "next_commands": [
+          "canon index rebuild --dry-run",
+          "canon search --query \"...\" --use-index"
+        ]
+      },
+      {
+        "name": "index rebuild",
+        "purpose": "Rebuild the search index from the authoritative Markdown corpus and replace the cached file atomically. A dry run creates no directory or file.",
+        "mutating": true,
+        "has_dry_run": true,
+        "safety": "write: atomically replaces the cached search index",
+        "selectors": [
+          "--dry-run"
+        ],
+        "examples": [
+          "canon index rebuild --dry-run",
+          "canon index rebuild"
+        ],
+        "next_commands": [
+          "canon index status",
+          "canon search --query \"...\" --use-index"
         ]
       },
       {

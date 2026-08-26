@@ -23,10 +23,12 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 
 - `cmd/canon`: CLI entrypoint.
 - `internal/canon`: command handling (`cli.go`, `config_command.go`), storage
-  (`store.go`), configuration (`config.go`), output rendering (`output.go`
+  (`store.go`, plus the `DocumentReader` read seam in `reader.go`),
+  configuration (`config.go`), output rendering (`output.go`
   format renderers plus typed payloads in `payloads.go`), command registry,
-  and tests. JSON output fixtures live in `internal/canon/testdata/output`
-  alongside the golden corpus.
+  the optional search index (`index.go` codec and `index_command.go`
+  handlers; ADR-0017), and tests. JSON output fixtures live in
+  `internal/canon/testdata/output` alongside the golden corpus.
 - `skill`: bundled agent skill and subagent source payloads under
   `skill/assets`, embedded and rendered by `skill.go` with per-asset versions,
   per-file hashes, and install/update helpers.
@@ -133,6 +135,10 @@ includes the warning `No changes were made.` `--dry-run` is required only
 before `supersede`, which updates both documents to keep the relationship
 reciprocal (ADR-0004) and is the messiest mutation to walk back.
 `accept`/`reject`/`deprecate` work the same for every kind via `--id`.
+`canon index status` and `canon index rebuild` manage the optional derived
+search index (ADR-0017): Markdown stays authoritative, `--dry-run` rebuild
+creates no directory or file, and `search --use-index` opts into the cached
+path with Markdown fallback on any index problem.
 
 Create ADRs only for project architecture. Architectural commitments may affect
 the CLI contract, ADR/SPEC file formats, query behavior, lifecycle semantics,

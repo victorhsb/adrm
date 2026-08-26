@@ -21,6 +21,8 @@
       "domain new",
       "domain search",
       "domain validate",
+      "index rebuild",
+      "index status",
       "list",
       "reject",
       "search",

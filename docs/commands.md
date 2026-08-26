@@ -400,6 +400,7 @@ canon spec search --query requirements
 canon domain search --query "cancellation"
 canon search --status deprecated
 canon adr search --tag storage --query local
+canon search --query "database" --use-index
 ```
 
 Flags:
@@ -407,8 +408,82 @@ Flags:
 - `--query`: search query.
 - `--status`: filter by status.
 - `--tag`: filter by tag.
+- `--use-index`: search through the cached index built by `canon index
+  rebuild`. When the index is absent, stale, corrupt, or uses an unsupported
+  schema version, the command falls back to the Markdown search and adds a
+  non-fatal warning explaining why; an index problem can never hide results
+  or fail a search the Markdown path would complete. Unflagged search always
+  reads Markdown. Indexed searches produce the same `query`, `count`, and
+  `results` as Markdown searches for every selector (ADR-0017).
 
-Safety: read-only.
+Safety: read-only. Never rebuilds the index.
+
+## `index status`
+
+Reports the state of the derived search index for the configured corpus
+(ADR-0017). The index lives at a cache path derived from the store directory
+paths under the user cache directory; Markdown files remain the authoritative
+corpus and deleting the cache changes only index status and performance.
+
+```sh
+canon index status
+```
+
+Data:
+
+- `state`: one of `absent` (no index file), `fresh` (matches the current
+  Markdown corpus), `stale` (a source file was added, removed, or changed),
+  `corrupt` (unreadable or malformed index), or `unsupported` (unknown schema
+  version).
+- `path`: the inspectable cache file path.
+- `schema_version`: the index format version, when a file exists.
+- `documents`: the number of indexed documents, when fresh.
+- `reason`: why a non-fresh index does not match the corpus.
+
+Freshness compares the Markdown path set plus each file's size and
+modification time, rehashing only files whose size or modification time
+changed. A content edit preserving both size and modification time is an
+accepted false-fresh limitation.
+
+Safety: read-only. Never creates, modifies, or deletes the index.
+
+Errors:
+
+- `index_path_failed`: the user cache directory could not be resolved
+  (exit 5).
+
+## `index rebuild`
+
+Rebuilds the search index from the authoritative Markdown corpus and
+replaces the cached file atomically: the new index is written to a temporary
+file in the same cache directory, synced, and renamed, so an interrupted
+rebuild never replaces a valid index with a partial one. The cache directory
+is created `0700` and the index file `0600` because records contain document
+content.
+
+```sh
+canon index rebuild --dry-run
+canon index rebuild
+```
+
+Flags:
+
+- `--dry-run`: preview without writing. Reads the corpus and plans the
+  replacement but creates no directory or file.
+
+Rebuilding unchanged Markdown produces identical index bytes. Validation,
+list, show, and lifecycle commands never read the index, and search never
+rebuilds it.
+
+Safety: mutating. Supports `--dry-run`.
+
+Errors:
+
+- `index_path_failed`: the user cache directory could not be resolved
+  (exit 5).
+- `index_build_failed`: the corpus could not be read or parsed (exit 5). Run
+  `canon validate` to find malformed files.
+- `index_write_failed`: the cache file could not be written (exit 5).
 
 ## `accept`
 

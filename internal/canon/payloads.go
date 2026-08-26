@@ -36,6 +36,8 @@ var (
 	_ outputPayload = Plan{}
 	_ outputPayload = skillCatalogPayload{}
 	_ outputPayload = skillMutationPayload{}
+	_ outputPayload = indexStatusPayload{}
+	_ outputPayload = indexRebuildPayload{}
 
 	_ contextPayload = listPayload{}
 )
@@ -309,6 +311,47 @@ type skillMutationPayload struct {
 
 func (p skillMutationPayload) renderText(out io.Writer) {
 	renderPlanText(out, p.Plan)
+}
+
+// indexStatusPayload is the `index status` data: the derived index state for
+// the configured corpus, the inspectable cache path, the schema version
+// found in the file (empty when absent), the indexed document count, and the
+// reason a non-fresh index does not match the corpus.
+type indexStatusPayload struct {
+	State         string `json:"state"`
+	Path          string `json:"path"`
+	SchemaVersion string `json:"schema_version,omitempty"`
+	Documents     int    `json:"documents"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+func (p indexStatusPayload) renderText(out io.Writer) {
+	fmt.Fprintf(out, "state: %s\n", p.State)
+	fmt.Fprintf(out, "path: %s\n", p.Path)
+	if p.SchemaVersion != "" {
+		fmt.Fprintf(out, "schema_version: %s\n", p.SchemaVersion)
+	}
+	fmt.Fprintf(out, "documents: %d\n", p.Documents)
+	if p.Reason != "" {
+		fmt.Fprintf(out, "reason: %s\n", p.Reason)
+	}
+}
+
+// indexRebuildPayload is the `index rebuild` data in both preview and
+// applied forms: the replacement plan plus the cache path, schema version,
+// and indexed document count.
+type indexRebuildPayload struct {
+	Plan          Plan   `json:"plan"`
+	Path          string `json:"path"`
+	SchemaVersion string `json:"schema_version"`
+	Documents     int    `json:"documents"`
+}
+
+func (p indexRebuildPayload) renderText(out io.Writer) {
+	renderPlanText(out, p.Plan)
+	fmt.Fprintf(out, "path: %s\n", p.Path)
+	fmt.Fprintf(out, "schema_version: %s\n", p.SchemaVersion)
+	fmt.Fprintf(out, "documents: %d\n", p.Documents)
 }
 
 // renderPlanText renders the shared plan projection used by every mutation
