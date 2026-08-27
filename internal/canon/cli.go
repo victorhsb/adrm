@@ -110,84 +110,103 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	command := remaining[0]
-	commandArgs := remaining[1:]
-	repo := NewRepo(opts)
-
-	if command == KindADR || command == KindSPEC || command == KindDomain {
-		return runKindCommand(command, stdout, stderr, opts, repo, commandArgs)
+	ctx := commandContext{
+		stdout: stdout,
+		stderr: stderr,
+		opts:   opts,
+		repo:   NewRepo(opts),
 	}
 
-	switch command {
-	case "commands":
-		return runCommands(stdout, opts)
-	case "version":
-		return runVersion(stdout, opts)
-	case "doctor":
-		return runDoctor(stdout, opts, repo)
-	case "validate":
-		return runValidate(stdout, stderr, opts, repo, commandArgs, "")
-	case "config":
-		return runConfig(stdout, stderr, opts, repo, commandArgs)
-	case "init", "new":
+	// Bare `init` and `new` are intentionally invalid and stay outside the
+	// table: every kind-scoped creation or storage command carries its kind
+	// prefix (ADR-0008).
+	if command == "init" || command == "new" {
 		writeEnvelope(stdout, errorEnvelope(command, "kind_prefix_required", "usage", fmt.Sprintf("%q requires a kind prefix", command), fmt.Sprintf("Use `canon adr %s`, `canon spec %s`, or `canon domain %s`.", command, command, command)), opts.Format)
 		return exitUsage
-	case "list":
-		return runList(stdout, stderr, opts, repo, commandArgs, "")
-	case "show":
-		return runShow(stdout, stderr, opts, repo, commandArgs)
-	case "search":
-		return runSearch(stdout, stderr, opts, repo, commandArgs, "")
-	case "accept":
-		return runLifecycle(stdout, stderr, opts, repo, commandArgs, "accept", "accepted", "Accepted")
-	case "reject":
-		return runLifecycle(stdout, stderr, opts, repo, commandArgs, "reject", "rejected", "Rejected")
-	case "supersede":
-		return runSupersede(stdout, stderr, opts, repo, commandArgs)
-	case "deprecate":
-		return runDeprecate(stdout, stderr, opts, repo, commandArgs)
-	case "append":
-		return runAppend(stdout, stderr, opts, repo, commandArgs)
-	case "index":
-		return runIndexCommand(stdout, stderr, opts, repo, commandArgs)
-	case "skill":
-		return runSkill(stdout, stderr, opts, commandArgs)
-	default:
-		writeEnvelope(stdout, errorEnvelope(command, "unknown_command", "usage", fmt.Sprintf("unknown command %q", command), "Run `canon commands` to inspect valid commands."), opts.Format)
-		return exitUsage
 	}
+	if family, ok := commandFamilyFor(command); ok {
+		return dispatchFamily(ctx, family, command, remaining[1:])
+	}
+	if entry := lookupCommand(command); entry != nil {
+		ctx.name = entry.info.Name
+		ctx.args = remaining[1:]
+		return entry.handler(ctx)
+	}
+	writeEnvelope(stdout, errorEnvelope(command, "unknown_command", "usage", fmt.Sprintf("unknown command %q", command), "Run `canon commands` to inspect valid commands."), opts.Format)
+	return exitUsage
 }
 
-// runKindCommand dispatches kind-prefixed commands such as `canon adr new`
-// and `canon spec list`. Only commands that create or scope documents by kind
-// live under the prefix; document commands route by --id prefix instead.
-func runKindCommand(kind string, stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	suggested := fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, `canon %s validate`, or `canon %s init`.", kind, kind, kind, kind, kind)
+// commandFamily describes a command prefix that routes its first child token
+// into two-token command-table entries. Families (adr, spec, domain, config,
+// index, and skill) are not commands, so they never appear in the table or in
+// `canon commands`; their missing and unknown diagnostics live here, outside
+// the registered commands.
+type commandFamily struct {
+	// missingCode is the error code for a bare family prefix. It is empty
+	// when the bare prefix is itself a registered command (skill).
+	missingCode string
+	// missingFix is the suggested fix for a bare family prefix.
+	missingFix string
+	// unknownCode is the error code for an unknown child.
+	unknownCode string
+	// unknownFix is the suggested fix for an unknown child.
+	unknownFix string
+}
+
+// commandFamilyFor resolves the dispatch contract for a top-level prefix.
+// The kind families build their suggested fixes from the kind; the other
+// families are static.
+func commandFamilyFor(prefix string) (commandFamily, bool) {
+	if isKind(prefix) {
+		suggested := fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, `canon %s validate`, or `canon %s init`.", prefix, prefix, prefix, prefix, prefix)
+		return commandFamily{
+			missingCode: "missing_kind_subcommand",
+			missingFix:  suggested,
+			unknownCode: "unknown_command",
+			unknownFix:  suggested + " Other commands route by --id without a kind prefix.",
+		}, true
+	}
+	switch prefix {
+	case "config":
+		fix := "Use `canon config show` or `canon config validate`."
+		return commandFamily{missingCode: "missing_config_subcommand", missingFix: fix, unknownCode: "unknown_command", unknownFix: fix}, true
+	case "index":
+		fix := "Use `canon index status` or `canon index rebuild --dry-run`."
+		return commandFamily{missingCode: "missing_index_subcommand", missingFix: fix, unknownCode: "unknown_command", unknownFix: fix}, true
+	case "skill":
+		return commandFamily{unknownCode: "unknown_skill_subcommand", unknownFix: "Use `canon skill`, `canon skill install`, or `canon skill update`."}, true
+	}
+	return commandFamily{}, false
+}
+
+// dispatchFamily routes a family prefix through one table lookup. Registered
+// two-token children win, so `skill install` never falls through to `skill`
+// and unknown children keep their family-specific diagnostic. A bare prefix
+// falls back to a one-token entry when the family is also a command (skill),
+// and otherwise reports the family's missing-subcommand diagnostic.
+func dispatchFamily(ctx commandContext, family commandFamily, prefix string, args []string) int {
 	if len(args) == 0 {
-		writeEnvelope(stdout, errorEnvelope(kind, "missing_kind_subcommand", "usage", fmt.Sprintf("%q requires a subcommand", kind), suggested), opts.Format)
+		if entry := lookupCommand(prefix); entry != nil {
+			ctx.name = entry.info.Name
+			return entry.handler(ctx)
+		}
+		writeEnvelope(ctx.stdout, errorEnvelope(prefix, family.missingCode, "usage", fmt.Sprintf("%q requires a subcommand", prefix), family.missingFix), ctx.opts.Format)
 		return exitUsage
 	}
-	switch args[0] {
-	case "new":
-		return runNew(stdout, stderr, opts, repo, args[1:], kind)
-	case "list":
-		return runList(stdout, stderr, opts, repo, args[1:], kind)
-	case "search":
-		return runSearch(stdout, stderr, opts, repo, args[1:], kind)
-	case "validate":
-		return runValidate(stdout, stderr, opts, repo, args[1:], kind)
-	case "init":
-		return runInit(stdout, stderr, opts, repo, args[1:], kind)
-	default:
-		writeEnvelope(stdout, errorEnvelope(kind, "unknown_command", "usage", fmt.Sprintf("unknown %s subcommand %q", kind, args[0]), suggested+" Other commands route by --id without a kind prefix."), opts.Format)
-		return exitUsage
+	if entry := lookupCommand(prefix + " " + args[0]); entry != nil {
+		ctx.name = entry.info.Name
+		ctx.args = args[1:]
+		return entry.handler(ctx)
 	}
+	writeEnvelope(ctx.stdout, errorEnvelope(prefix, family.unknownCode, "usage", fmt.Sprintf("unknown %s subcommand %q", prefix, args[0]), family.unknownFix), ctx.opts.Format)
+	return exitUsage
 }
 
 func runCommands(stdout io.Writer, opts GlobalOptions) int {
 	writeEnvelope(stdout, Envelope{
 		Command: "commands",
 		Data: commandsPayload{
-			Commands: commandRegistry(),
+			Commands: commandInfos(),
 			GlobalFlags: []globalFlag{
 				{Name: "--adr-dir", Default: defaultADRDir, Purpose: "Select ADR storage directory."},
 				{Name: "--spec-dir", Default: defaultSpecDir, Purpose: "Select SPEC storage directory."},
@@ -857,7 +876,7 @@ func enforceReasonPolicy(stdout io.Writer, opts GlobalOptions, command string, s
 	return true
 }
 
-func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, command, status, historyTitle string) int {
+func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string, command string, transition lifecycleTransition) int {
 	fs := newCommandFlagSet(stderr, command)
 	id := fs.String("id", "", fmt.Sprintf("document id to %s", command))
 	reason := fs.String("reason", "", "reason")
@@ -884,7 +903,7 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 	if err != nil {
 		return handleReadError(stdout, opts, command, err)
 	}
-	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=%s and append history.", status)}}}
+	plan := Plan{DryRun: *dryRun, Operations: []OpPlan{{Action: "update_file", Path: adr.Path, Description: fmt.Sprintf("Set status=%s and append history.", transition.status)}}}
 	applyCommand := fmt.Sprintf("canon %s --id %s", command, adr.ID)
 	if strings.TrimSpace(*reason) != "" {
 		applyCommand += " --reason " + quoteForNextAction(*reason)
@@ -893,9 +912,9 @@ func runLifecycle(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args 
 		writeEnvelope(stdout, dryRunEnvelope(command, plan, adr.ID, applyCommand), opts.Format)
 		return exitOK
 	}
-	adr.Status = status
+	adr.Status = transition.status
 	adr.Content = setStatusSection(adr.Content, adr.Status)
-	adr.Content = appendHistory(adr.Content, historyTitle, defaultText(*reason, "No reason provided."))
+	adr.Content = appendHistory(adr.Content, transition.historyTitle, defaultText(*reason, "No reason provided."))
 	if err := store.Save(adr); err != nil {
 		writeEnvelope(stdout, errorEnvelope(command, "update_failed", "io", err.Error(), "Check file permissions and retry."), opts.Format)
 		return exitIO
@@ -1090,30 +1109,21 @@ func runAppend(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []s
 	return exitOK
 }
 
-func runSkill(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
-	if len(args) == 0 {
-		writeEnvelope(stdout, Envelope{
-			Command: "skill",
-			Data: skillCatalogPayload{
-				Assets:          skill.Catalog(),
-				DefaultSkillDir: skill.DefaultInstallDir,
-			},
-			NextActions: []NextAction{
-				{Command: "canon skill install --dry-run", Description: "Preview installing the bundled agent skills and subagent components.", Safety: "preview"},
-				{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
-			},
-		}, opts.Format)
-		return exitOK
-	}
-	switch args[0] {
-	case "install":
-		return runSkillInstall(stdout, stderr, opts, args[1:])
-	case "update":
-		return runSkillUpdate(stdout, stderr, opts, args[1:])
-	default:
-		writeEnvelope(stdout, errorEnvelope("skill", "unknown_skill_subcommand", "usage", fmt.Sprintf("unknown skill subcommand %q", args[0]), "Use `canon skill`, `canon skill install`, or `canon skill update`."), opts.Format)
-		return exitUsage
-	}
+// runSkillCatalog reports the bundled skill asset catalog. It backs the bare
+// `skill` command; install and update are separate command-table entries.
+func runSkillCatalog(stdout io.Writer, opts GlobalOptions) int {
+	writeEnvelope(stdout, Envelope{
+		Command: "skill",
+		Data: skillCatalogPayload{
+			Assets:          skill.Catalog(),
+			DefaultSkillDir: skill.DefaultInstallDir,
+		},
+		NextActions: []NextAction{
+			{Command: "canon skill install --dry-run", Description: "Preview installing the bundled agent skills and subagent components.", Safety: "preview"},
+			{Command: "canon commands", Description: "Inspect machine-readable CLI capabilities.", Safety: "read-only"},
+		},
+	}, opts.Format)
+	return exitOK
 }
 
 func runSkillInstall(stdout, stderr io.Writer, opts GlobalOptions, args []string) int {
@@ -1578,11 +1588,14 @@ func handleReadError(stdout io.Writer, opts GlobalOptions, command string, err e
 	return exitIO
 }
 
+// commandNames derives the no-command response inventory from the table and
+// sorts it, so bare `canon` retains its alphabetical command list while
+// `canon commands` keeps declaration order.
 func commandNames() []string {
-	registry := commandRegistry()
-	names := make([]string, 0, len(registry))
-	for _, command := range registry {
-		names = append(names, command.Name)
+	table := commandTable()
+	names := make([]string, 0, len(table))
+	for _, entry := range table {
+		names = append(names, entry.info.Name)
 	}
 	sort.Strings(names)
 	return names

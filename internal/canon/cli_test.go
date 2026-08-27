@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -2071,6 +2072,294 @@ func TestValidateNeverMutatesAndDeterministicOrder(t *testing.T) {
 	secondFindings, _ := json.Marshal(envAgain["data"].(map[string]any)["findings"])
 	if !bytes.Equal(firstFindings, secondFindings) {
 		t.Fatal("validate findings are not deterministic across runs")
+	}
+}
+
+// TestRoutingErrorContracts pins the stable error envelopes that command
+// families emit for missing and unknown subcommands. The command-table
+// refactor must keep these byte-equivalent: exit code, envelope command,
+// code, category, message, and suggested fix.
+func TestRoutingErrorContracts(t *testing.T) {
+	type routingError struct {
+		name    string
+		args    []string
+		command string
+		code    string
+		message string
+		fix     string
+	}
+	kindMissingFix := func(kind string) string {
+		return fmt.Sprintf("Use `canon %s new`, `canon %s list`, `canon %s search`, `canon %s validate`, or `canon %s init`.", kind, kind, kind, kind, kind)
+	}
+	tests := []routingError{
+		{name: "bare adr", args: []string{"adr"}, command: "adr", code: "missing_kind_subcommand", message: `"adr" requires a subcommand`, fix: kindMissingFix("adr")},
+		{name: "bare spec", args: []string{"spec"}, command: "spec", code: "missing_kind_subcommand", message: `"spec" requires a subcommand`, fix: kindMissingFix("spec")},
+		{name: "bare domain", args: []string{"domain"}, command: "domain", code: "missing_kind_subcommand", message: `"domain" requires a subcommand`, fix: kindMissingFix("domain")},
+		{name: "unknown adr child", args: []string{"adr", "show"}, command: "adr", code: "unknown_command", message: `unknown adr subcommand "show"`, fix: kindMissingFix("adr") + " Other commands route by --id without a kind prefix."},
+		{name: "unknown spec child", args: []string{"spec", "show"}, command: "spec", code: "unknown_command", message: `unknown spec subcommand "show"`, fix: kindMissingFix("spec") + " Other commands route by --id without a kind prefix."},
+		{name: "unknown domain child", args: []string{"domain", "append"}, command: "domain", code: "unknown_command", message: `unknown domain subcommand "append"`, fix: kindMissingFix("domain") + " Other commands route by --id without a kind prefix."},
+		{name: "bare config", args: []string{"config"}, command: "config", code: "missing_config_subcommand", message: `"config" requires a subcommand`, fix: "Use `canon config show` or `canon config validate`."},
+		{name: "unknown config child", args: []string{"config", "plist"}, command: "config", code: "unknown_command", message: `unknown config subcommand "plist"`, fix: "Use `canon config show` or `canon config validate`."},
+		{name: "bare index", args: []string{"index"}, command: "index", code: "missing_index_subcommand", message: `"index" requires a subcommand`, fix: "Use `canon index status` or `canon index rebuild --dry-run`."},
+		{name: "unknown index child", args: []string{"index", "drop"}, command: "index", code: "unknown_command", message: `unknown index subcommand "drop"`, fix: "Use `canon index status` or `canon index rebuild --dry-run`."},
+		{name: "unknown skill child", args: []string{"skill", "uninstall"}, command: "skill", code: "unknown_skill_subcommand", message: `unknown skill subcommand "uninstall"`, fix: "Use `canon skill`, `canon skill install`, or `canon skill update`."},
+		{name: "unknown top-level", args: []string{"frob"}, command: "frob", code: "unknown_command", message: `unknown command "frob"`, fix: "Run `canon commands` to inspect valid commands."},
+		{name: "bare new", args: []string{"new"}, command: "new", code: "kind_prefix_required", message: `"new" requires a kind prefix`, fix: "Use `canon adr new`, `canon spec new`, or `canon domain new`."},
+		{name: "bare init", args: []string{"init"}, command: "init", code: "kind_prefix_required", message: `"init" requires a kind prefix`, fix: "Use `canon adr init`, `canon spec init`, or `canon domain init`."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, env := runForTest(t, tt.args...)
+			if code != exitUsage {
+				t.Fatalf("code = %d env = %#v", code, env)
+			}
+			if env["command"] != tt.command {
+				t.Fatalf("envelope command = %v, want %q", env["command"], tt.command)
+			}
+			if env["status"] != "error" {
+				t.Fatalf("status = %v", env["status"])
+			}
+			errData := env["error"].(map[string]any)
+			if errData["code"] != tt.code {
+				t.Fatalf("error code = %v, want %q", errData["code"], tt.code)
+			}
+			if errData["category"] != "usage" {
+				t.Fatalf("category = %v", errData["category"])
+			}
+			if errData["message"] != tt.message {
+				t.Fatalf("message = %v, want %q", errData["message"], tt.message)
+			}
+			if errData["suggested_fix"] != tt.fix {
+				t.Fatalf("suggested fix = %v, want %q", errData["suggested_fix"], tt.fix)
+			}
+		})
+	}
+}
+
+// TestHelpRouting pins the help behavior: global help exits before dispatch
+// and leaf help exits before any envelope is written, with usage text on
+// stderr and nothing on stdout.
+func TestHelpRouting(t *testing.T) {
+	tests := [][]string{
+		{"--help"},
+		{"adr", "list", "--help"},
+		{"adr", "new", "--help"},
+		{"list", "--help"},
+		{"validate", "--help"},
+		{"config", "show", "--help"},
+		{"index", "rebuild", "--help"},
+		{"skill", "install", "--help"},
+		{"skill", "update", "--help"},
+		{"accept", "--help"},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(args, &stdout, &stderr)
+			if code != exitOK {
+				t.Fatalf("code = %d", code)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("help wrote to stdout: %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), "Usage of") {
+				t.Fatalf("stderr missing usage text: %q", stderr.String())
+			}
+		})
+	}
+}
+
+// TestInvalidFormatRejected pins the global format gate: invalid formats are
+// rejected before dispatch and rendered as JSON with the canon envelope
+// command.
+func TestInvalidFormatRejected(t *testing.T) {
+	code, env := runForTest(t, "--format", "invalid", "commands")
+	if code != exitUsage {
+		t.Fatalf("code = %d env = %#v", code, env)
+	}
+	if env["command"] != "canon" {
+		t.Fatalf("envelope command = %v", env["command"])
+	}
+	errData := env["error"].(map[string]any)
+	if errData["code"] != "invalid_format" || errData["category"] != "usage" {
+		t.Fatalf("error = %#v", errData)
+	}
+}
+
+// TestContextFormatRouting pins the context-format gate: list commands route
+// through successfully and every other command is rejected before dispatch.
+func TestContextFormatRouting(t *testing.T) {
+	adr := filepath.Join(t.TempDir(), "adr")
+	spec := filepath.Join(t.TempDir(), "spec")
+	domain := filepath.Join(t.TempDir(), "domain")
+	base := []string{"--adr-dir", adr, "--spec-dir", spec, "--domain-dir", domain, "--format", "context"}
+	supported := [][]string{
+		{"list"},
+		{"adr", "list"},
+		{"spec", "list"},
+		{"domain", "list"},
+	}
+	for _, args := range supported {
+		t.Run("supported "+strings.Join(args, " "), func(t *testing.T) {
+			code, output := runRawForTest(t, append(append([]string{}, base...), args...)...)
+			if code != exitOK {
+				t.Fatalf("code = %d output:\n%s", code, output)
+			}
+		})
+	}
+	rejected := []struct {
+		args    []string
+		command string
+	}{
+		{args: []string{"commands"}, command: "commands"},
+		{args: []string{"doctor"}, command: "doctor"},
+		{args: []string{"validate"}, command: "validate"},
+		{args: []string{"show", "--id", "ADR-0001"}, command: "show"},
+		{args: []string{"adr", "search", "--query", "text"}, command: "adr search"},
+	}
+	for _, tt := range rejected {
+		t.Run("rejected "+tt.command, func(t *testing.T) {
+			code, output := runRawForTest(t, append(append([]string{}, base...), tt.args...)...)
+			if code != exitUsage {
+				t.Fatalf("code = %d output:\n%s", code, output)
+			}
+			if !strings.Contains(output, "unsupported_context_format") {
+				t.Fatalf("output missing unsupported_context_format:\n%s", output)
+			}
+			if !strings.Contains(output, "not supported by "+tt.command) {
+				t.Fatalf("output missing command %q:\n%s", tt.command, output)
+			}
+		})
+	}
+}
+
+// registeredCommandNames is the exact ordered registry contract: every
+// rename, deletion, addition, or reordering of the command surface fails the
+// tests that use it.
+var registeredCommandNames = []string{
+	"commands", "version", "doctor",
+	"validate", "adr validate", "spec validate", "domain validate",
+	"config show", "config validate",
+	"adr init", "spec init", "domain init",
+	"adr new", "spec new", "domain new",
+	"list", "adr list", "spec list", "domain list",
+	"show",
+	"search", "adr search", "spec search", "domain search",
+	"index status", "index rebuild",
+	"accept", "reject", "supersede", "deprecate", "append",
+	"skill", "skill install", "skill update",
+}
+
+// TestCommandTableInvariants proves the table couples complete metadata with
+// an executable handler for every entry: adding metadata without a handler,
+// a handler without complete metadata, or a duplicate name fails here.
+func TestCommandTableInvariants(t *testing.T) {
+	table := commandTable()
+	seen := map[string]bool{}
+	for _, entry := range table {
+		info := entry.info
+		t.Run(info.Name, func(t *testing.T) {
+			if info.Name == "" {
+				t.Fatal("command entry has an empty name")
+			}
+			if seen[info.Name] {
+				t.Fatalf("command %q is registered twice", info.Name)
+			}
+			seen[info.Name] = true
+			if strings.TrimSpace(info.Purpose) == "" {
+				t.Fatal("command has no purpose")
+			}
+			if strings.TrimSpace(info.Safety) == "" {
+				t.Fatal("command has no safety annotation")
+			}
+			if len(info.Examples) == 0 {
+				t.Fatal("command has no examples")
+			}
+			if entry.handler == nil {
+				t.Fatal("command has no handler")
+			}
+			if info.Mutating && !info.HasDryRun {
+				t.Fatal("mutating command must support --dry-run")
+			}
+		})
+	}
+}
+
+// TestCommandTableOrder pins the exact ordered registry: `canon commands`
+// returns the table in declaration order, and bare `canon` returns the same
+// names sorted.
+func TestCommandTableOrder(t *testing.T) {
+	table := commandTable()
+	names := make([]string, 0, len(table))
+	for _, entry := range table {
+		names = append(names, entry.info.Name)
+	}
+	if strings.Join(names, ",") != strings.Join(registeredCommandNames, ",") {
+		t.Fatalf("table order = %v, want %v", names, registeredCommandNames)
+	}
+
+	code, env := runForTest(t, "commands")
+	if code != exitOK {
+		t.Fatalf("commands code = %d", code)
+	}
+	commands := env["data"].(map[string]any)["commands"].([]any)
+	exposed := make([]string, 0, len(commands))
+	for _, raw := range commands {
+		exposed = append(exposed, raw.(map[string]any)["name"].(string))
+	}
+	if strings.Join(exposed, ",") != strings.Join(registeredCommandNames, ",") {
+		t.Fatalf("canon commands order = %v, want %v", exposed, registeredCommandNames)
+	}
+
+	code, env = runForTest(t)
+	if code != exitOK {
+		t.Fatalf("bare canon code = %d", code)
+	}
+	sorted := append([]string{}, registeredCommandNames...)
+	sort.Strings(sorted)
+	rootCommands := env["data"].(map[string]any)["commands"].([]any)
+	root := make([]string, 0, len(rootCommands))
+	for _, raw := range rootCommands {
+		root = append(root, raw.(string))
+	}
+	if strings.Join(root, ",") != strings.Join(sorted, ",") {
+		t.Fatalf("bare canon commands = %v, want sorted %v", root, sorted)
+	}
+}
+
+// TestRegisteredCommandsDispatchThroughTable invokes every registered command
+// through Run and proves it reaches a table handler: bare names for the
+// commands that take no flags, --help for the flag-based handlers, and
+// isolated temporary stores so nothing in the working tree is touched. A
+// missing handler would exit with the unknown-command diagnostic instead.
+func TestRegisteredCommandsDispatchThroughTable(t *testing.T) {
+	base := []string{
+		"--adr-dir", filepath.Join(t.TempDir(), "adr"),
+		"--spec-dir", filepath.Join(t.TempDir(), "spec"),
+		"--domain-dir", filepath.Join(t.TempDir(), "domain"),
+	}
+	bareCommands := map[string]bool{
+		"commands": true,
+		"version":  true,
+		"doctor":   true,
+		"skill":    true,
+	}
+	_, env := runForTest(t, "commands")
+	names := make([]string, 0)
+	for _, raw := range env["data"].(map[string]any)["commands"].([]any) {
+		names = append(names, raw.(map[string]any)["name"].(string))
+	}
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			args := strings.Fields(name)
+			if !bareCommands[name] {
+				args = append(args, "--help")
+			}
+			code, _ := runRawForTest(t, append(append([]string{}, base...), args...)...)
+			if code != exitOK {
+				t.Fatalf("%s exited %d", name, code)
+			}
+		})
 	}
 }
 

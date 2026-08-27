@@ -135,24 +135,9 @@ func joinOrDash(values []string) string {
 	return strings.Join(values, ", ")
 }
 
-// runConfig dispatches the configuration inspection subcommands. The command
-// family is read-only and never mutates configuration or documents.
-func runConfig(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	if len(args) == 0 {
-		writeEnvelope(stdout, errorEnvelope("config", "missing_config_subcommand", "usage", `"config" requires a subcommand`, "Use `canon config show` or `canon config validate`."), opts.Format)
-		return exitUsage
-	}
-	switch args[0] {
-	case "show":
-		return runConfigShow(stdout, stderr, opts, repo, args[1:])
-	case "validate":
-		return runConfigValidate(stdout, stderr, opts, repo, args[1:])
-	default:
-		writeEnvelope(stdout, errorEnvelope("config", "unknown_command", "usage", fmt.Sprintf("unknown config subcommand %q", args[0]), "Use `canon config show` or `canon config validate`."), opts.Format)
-		return exitUsage
-	}
-}
-
+// runConfigShow backs the `config show` command-table entry. The
+// configuration inspection family is read-only and never mutates
+// configuration or documents.
 func runConfigShow(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
 	fs := newCommandFlagSet(stderr, "config show")
 	if help, err := parseFlags(fs, args); err != nil {

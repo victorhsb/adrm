@@ -25,7 +25,9 @@ Global flags (`--adr-dir`, `--spec-dir`, `--domain-dir`, `--format`) must come
 - `internal/canon`: command handling (`cli.go`, `config_command.go`), storage
   (`store.go`, plus the `DocumentReader` read seam in `reader.go`),
   configuration (`config.go`), output rendering (`output.go`
-  format renderers plus typed payloads in `payloads.go`), command registry,
+  format renderers plus typed payloads in `payloads.go`), the command table
+  in `registry.go` (each entry couples public metadata with its handler;
+  dispatch in `cli.go` resolves through it),
   the optional search index (`index.go` codec and `index_command.go`
   handlers; ADR-0017), and tests. JSON output fixtures live in
   `internal/canon/testdata/output` alongside the golden corpus.
@@ -167,7 +169,10 @@ Keep the CLI agent-friendly:
 
 When adding a command, update:
 
-- `internal/canon/registry.go`
+- `internal/canon/registry.go`: add one command-table entry holding the
+  public `CommandInfo` metadata and the handler together. The table is the
+  single source of truth for both discovery and dispatch, so there is no
+  separate metadata or dispatch edit to keep in sync.
 - `docs/commands.md`
 - `docs/agent-workflows.md` if workflows change
 - tests in `internal/canon`

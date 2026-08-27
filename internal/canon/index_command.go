@@ -6,25 +6,9 @@ import (
 	"strings"
 )
 
-// runIndexCommand dispatches the index subcommands. The index is a derived
-// cache (ADR-0017): status only reports it, and rebuild regenerates it
-// atomically from the authoritative Markdown corpus.
-func runIndexCommand(stdout, stderr io.Writer, opts GlobalOptions, repo Repo, args []string) int {
-	suggested := "Use `canon index status` or `canon index rebuild --dry-run`."
-	if len(args) == 0 {
-		writeEnvelope(stdout, errorEnvelope("index", "missing_index_subcommand", "usage", "\"index\" requires a subcommand", suggested), opts.Format)
-		return exitUsage
-	}
-	switch args[0] {
-	case "status":
-		return runIndexStatus(stdout, opts, repo)
-	case "rebuild":
-		return runIndexRebuild(stdout, stderr, opts, repo, args[1:])
-	default:
-		writeEnvelope(stdout, errorEnvelope("index", "unknown_command", "usage", fmt.Sprintf("unknown index subcommand %q", args[0]), suggested), opts.Format)
-		return exitUsage
-	}
-}
+// This file implements the index commands as command-table entries. The
+// index is a derived cache (ADR-0017): status only reports it, and rebuild
+// regenerates it atomically from the authoritative Markdown corpus.
 
 // runIndexStatus reports the derived index state for the configured corpus:
 // absent, fresh, stale, corrupt, or unsupported, plus the inspectable cache
